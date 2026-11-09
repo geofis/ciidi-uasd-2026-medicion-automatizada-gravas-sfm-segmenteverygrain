@@ -1,0 +1,428 @@
+---
+title: "Detección automatizada de tramos costeros arenosos para el análisis multitemporal de playas de República Dominicana."
+subtitle: "V Congreso Internacional de Investigación, Desarrollo e Innovación (I+D+I), UASD, 2026"
+author: "José Ramón Martínez Batlle"
+institute: |
+  Universidad Autónoma de Santo Domingo · Facultad de Ciencias <br>
+  [Ver presentación en GitHub Pages: <br> https://geofis.github.io/ciidi-uasd-2026-deteccion-automatizada-tramos-costeros-arenosos/](https://geofis.github.io/ciidi-uasd-2026-deteccion-automatizada-tramos-costeros-arenosos/)
+date: "2026-11-18"
+format:
+  revealjs:
+    theme: [simple, estilos.scss]
+    slide-number: true
+    transition: fade
+    width: 1280
+    height: 720
+    margin: 0.08
+    embed-resources: false
+    footer: "UASD · Detección de playas arenosas · 2026"
+    
+    title-slide-attributes:
+      data-background-color: "#075a7a"
+
+execute:
+  echo: false
+include-in-header: qr-portada.html
+---
+
+## ¿Dónde están las playas que debemos monitorear?
+
+::: {.columns}
+::: {.column width="56%"}
+- El análisis histórico del litoral necesita identificar **tramos arenosos candidatos**.
+- Una selección manual nacional dificulta escalar y reproducir el procedimiento.
+- Clasificar primero permite **priorizar la extracción de líneas de costa con CoastSat**.
+
+**Pregunta:** ¿podemos identificar automáticamente playas arenosas en el litoral dominicano?
+:::
+::: {.column width="44%"}
+![](figuras/preparacion_qgis.jpg){fig-alt="Preparación de geometrías costeras en QGIS" fig-align="center"}
+:::
+:::
+
+## Objetivo y contribución
+
+**Desarrollar y aplicar un flujo reproducible de clasificación de coberturas costeras para identificar tramos arenosos candidatos a seguimiento multitemporal.**
+
+- Construcción del ámbito litoral dominicano.
+- Integración de **22 predictores** de teledetección y topografía.
+- Entrenamiento y validación preliminar de **U-Net**.
+- Inferencia en **siete sectores costeros**.
+- Preparación de insumos para **CoastSat** y análisis de tendencias.
+
+## ¿Por qué clasificar la costa?
+
+::: {.columns}
+::: {.column width="50%"}
+**Valor científico y operativo**
+
+- Inventario reproducible de ambientes costeros.
+- Priorización del monitoreo de playas.
+- Identificación de sectores para revisión y trabajo de campo.
+- Comparabilidad espacial del procedimiento.
+:::
+::: {.column width="50%"}
+**Aplicación principal**
+
+1. Detectar playas arenosas.
+2. Seleccionar tramos candidatos.
+3. Ejecutar CoastSat.
+4. Estimar desplazamientos, erosión, acreción y estabilidad.
+
+**Advertencia:** la clase playa no equivale automáticamente a una línea de costa extraíble.
+:::
+:::
+
+## Preparación geométrica en QGIS
+
+![](figuras/preparacion_qgis.jpg){fig-alt="Imagen aportada del procesamiento en QGIS" width="77%" fig-align="center"}
+
+::: {.smaller}
+S2Coast2023 (fishnet poligonal) → unión y depuración multipartes/monopartes → unidades insulares ≳9 km² → conversión a polilíneas → cortes en desembocaduras de Dajabón y Pedernales → costa dominicana de La Española + Beata, Saona y Catalina.
+:::
+
+## Sectorización del corredor litoral
+
+![](figuras/mosaico_clasificacion_nacional.png){fig-align="center"}
+
+::: {.smaller}
+Cuadrícula de referencia de **100 × 100 km**, siete sectores; buffer de **1 km** a cada lado de la línea costera. Mosaico ilustrativo derivado de los rásteres clasificados (no sustituye una delimitación vectorial oficial).
+:::
+
+## Fuentes y 22 predictores
+
+| Fuente | Predictores | Número |
+|---|---|---:|
+| Sentinel-2 SR | B2, B3, B4, B8, B11, B12; NDVI, NDWI, MNDWI, BSI (índice de suelo desnudo), brillo (reflectancia media del visible), BR (reflectancia media visible) | 12 |
+| Dynamic World | agua, árboles, herbáceas, construido, desnudo | 5 |
+| Sentinel-1 GRD | VV, VH, VV−VH | 3 |
+| NASADEM | elevación, pendiente | 2 |
+| **Total** | | **22** |
+
+Período de composición: **15 enero–15 marzo de 2025**. Resolución de exportación: **10 m**.
+
+## Arquitectura y entrenamiento
+
+- Modelo de segmentación semántica **U-Net** con cinco clases: urbano/artificial, playa arenosa, agua, vegetación, roca/acantilado.
+- Parches de entrada **160 × 160** píxeles, con núcleo de inferencia **128 × 128**.
+- Normalización a partir de las estadísticas del entrenamiento.
+- Entrenamiento con etiquetas espaciales parciales y pérdida enmascarada.
+- Modelo guardado en formato `.keras` y aplicado posteriormente en Colab.
+
+## Del entrenamiento a la cartografía nacional
+
+::: {.columns}
+::: {.column width="48%"}
+**Google Earth Engine**
+
+1. Composición de predictores.
+2. Máscaras de datos válidos y del sector.
+3. Exportación GeoTIFF georreferenciada.
+:::
+::: {.column width="52%"}
+**Google Colab**
+
+1. Lectura por ventanas de los GeoTIFF.
+2. Normalización y predicción U-Net.
+3. Recorte al núcleo central.
+4. Exportación de clases, probabilidades y estadísticas.
+:::
+:::
+
+## Evaluación: la clase de interés importa
+
+![](figuras/f1_clases.png){fig-align="center"}
+
+**F1 de playa arenosa: 0,786** · Precisión: **0,740** · Exhaustividad: **0,838**.
+
+::: {.smaller}
+Evaluación V5 del conjunto de validación del entrenamiento; **no** es una validación independiente nacional de los siete sectores.
+:::
+
+## Matriz de confusión de validación V5 {.slide-matriz}
+
+![](figuras/matriz_confusion_v5.png){fig-align="center"}
+
+::: {.leyenda-matriz}
+**Clases**
+
+1 · Urbano/artificial  
+2 · Playa arenosa  
+3 · Agua  
+4 · Vegetación  
+5 · Roca/acantilado
+
+---
+
+**Cómo leerla**
+
+**Filas:** realidad  
+**Columnas:** predicción  
+**Diagonal:** aciertos  
+**Fuera:** confusiones
+
+**Principal error:**  
+Playa ↔ roca
+:::
+
+::: {.smaller}
+F1 macro ≈ **0,955**; el desequilibrio de clases exige comunicar por separado el rendimiento sobre playa arenosa.
+:::
+
+## Cartografía de clasificación: siete sectores
+
+![](figuras/mosaico_clasificacion_nacional.png){fig-align="center"}
+
+::: {.smaller}
+Mosaico de visualización a resolución reducida a partir de los siete GeoTIFF de clases; en los solapes se utiliza la primera clasificación disponible.
+:::
+
+
+
+
+
+## Cartografía de clasificación: siete sectores
+
+:::: {.columns}
+
+::: {.column width="50%"}
+**Clasificación nacional**
+
+![](figuras/mosaico_clasificacion_nacional.png){fig-align="center" width="100%"}
+:::
+
+::: {.column width="50%"}
+**Distribución de los siete sectores**
+
+![](figuras/preparacion_qgis.jpg){fig-align="center" width="100%"}
+:::
+
+::::
+
+::: {.smaller}
+Izquierda: mosaico nacional de visualización a resolución reducida,
+generado a partir de los siete GeoTIFF de clasificación.
+Derecha: distribución espacial de los siete sectores de inferencia.
+En los solapes del mosaico se utiliza la primera clasificación disponible.
+:::
+
+
+
+
+
+## Superficies clasificadas por sector
+
+![](figuras/superficies_sectores.png){fig-align="center"}
+
+::: {.smaller}
+Las superficies proceden de los CSV de inferencia. **No sumar como superficie nacional única sin resolver previamente los solapes entre sectores.**
+:::
+
+## ¿Cuánta superficie se clasifica como playa?
+
+![](figuras/playa_por_sector.png){fig-align="center"}
+
+::: {.smaller}
+La suma simple de las siete estimaciones es **196,17 km²**, con posibles dobles conteos por solapes. Es superficie de píxeles etiquetados «playa», no longitud de costa ni inventario validado de playas.
+:::
+
+<style>
+.reveal table.tabla-playas {font-size: 0.63em; width: 100%;}
+.reveal table.tabla-playas th, .reveal table.tabla-playas td {
+  padding: 0.20em 0.35em;
+}
+</style>
+
+## Longitud costera por clase U-Net (intersección con S2Coast)
+
+![](figuras/longitud_por_clase.png){fig-align="center" width="88%"}
+
+::: {.smaller}
+Longitudes estimadas por muestreo regular de la línea S2Coast sobre el mosaico de clasificación. **Playa arenosa: 630,24 km** (34,92 % de los 1.804,74 km de costa analizados; 35,24 % de la longitud con clasificación válida).
+:::
+
+## Tabla de longitud costera por clase (intersección con S2Coast)
+
+```{r tabla-longitud-clases, results='asis'}
+ruta_clases <- "resultados/proporcion-playa/tabla_todas_las_clases.csv"
+if (file.exists(ruta_clases)) {
+  tabla_clases <- read.csv(ruta_clases, check.names = FALSE)
+  tabla_clases <- tabla_clases[, c("nombre_clase", "longitud_km", "porcentaje_total", "porcentaje_con_datos")]
+  names(tabla_clases) <- c("Clase", "Longitud (km)", "% costa total", "% costa con datos")
+  tabla_clases[-1] <- lapply(tabla_clases[-1], function(x) round(as.numeric(x), 2))
+  cat(knitr::kable(tabla_clases, format = "html", escape = TRUE,
+                   table.attr = 'class="tabla-playas"'))
+} else {
+  cat("**No se encuentra la tabla:** `", ruta_clases, "`. Ejecute primero el cuaderno de análisis.", sep = "")
+}
+```
+
+::: {.smaller}
+La suma de las clases representa la costa con clasificación válida, no necesariamente la longitud total de S2Coast.
+:::
+
+## Longitud y proporción de playa según el método (intersección con S2Coast)
+
+```{r tabla-longitudes-playa, results='asis'}
+ruta_tabla <- "resultados/proporcion-playa/tabla_comparativa_final.csv"
+if (file.exists(ruta_tabla)) {
+  tabla <- read.csv(ruta_tabla, check.names = FALSE)
+  tabla <- tabla[, c("metodo", "longitud_playa_km", "porcentaje_total", "porcentaje_con_datos")]
+  names(tabla) <- c("Método", "Longitud (km)", "% costa total", "% costa con datos")
+  tabla[-1] <- lapply(tabla[-1], function(x) round(as.numeric(x), 2))
+  cat(knitr::kable(tabla, format = "html", escape = TRUE,
+                   table.attr = 'class="tabla-playas"'))
+} else {
+  cat("**No se encuentra la tabla:** `", ruta_tabla, "`. Ejecute primero el cuaderno de análisis.", sep = "")
+}
+```
+
+::: {.smaller}
+La clasificación multiclase (`argmax`) y los umbrales de probabilidad responden a reglas de decisión diferentes. Los porcentajes sobre la costa total incluyen los tramos sin predicción en el denominador.
+:::
+
+## Sensibilidad de la longitud de playa al umbral (intersección con S2Coast)
+
+![](figuras/longitud_segun_umbral.png){fig-align="center" width="88%"}
+
+::: {.smaller}
+La longitud disminuye de **1.060,70 km** (probabilidad ≥ 0,1) a **174,34 km** (≥ 0,9). Para probabilidad ≥ 0,5 se obtienen **514,38 km**, frente a **630,24 km** de la clasificación U-Net.
+:::
+
+## Comparación de longitudes costeras
+
+::: {.columns}
+::: {.column width="50%"}
+**Clasificación multiclase**
+
+- Playa arenosa: **630,24 km**.
+- **34,92 %** de toda la línea S2Coast.
+- **35,24 %** de la costa con clasificación válida.
+:::
+::: {.column width="50%"}
+**Probabilidad de playa ≥ 0,5**
+
+- Playa probable: **514,38 km**.
+- **28,50 %** de toda la línea S2Coast.
+- **28,76 %** de la costa con probabilidad válida.
+:::
+:::
+
+::: {.smaller}
+La línea de referencia tiene **1.804,74 km**, de los cuales **1.788,30 km** cuentan con inferencia válida. Son estimaciones sobre S2Coast, no una delimitación independiente de playas verificada en campo. La sensibilidad al umbral debe interpretarse como un análisis de escenarios, no como validación de precisión.
+:::
+
+## Ejemplo: sector 1
+
+![](figuras/sector_01_mapas.png){fig-align="center"}
+
+## Ejemplo: sector 4
+
+![](figuras/sector_04_mapas.png){fig-align="center"}
+
+## Ejemplo: sector 6
+
+![](figuras/sector_06_mapas.png){fig-align="center"}
+
+## Ejemplo: sector 7
+
+![](figuras/sector_07_mapas.png){fig-align="center"}
+
+## Distribución de probabilidades y confianza
+
+![](figuras/sector_01_histogramas.png){width="88%"}
+
+::: {.smaller}
+Histogramas del sector 1, donde predominan las probabilidades bajas de playa y las confianzas altas en la clase predicha; sin embargo, una confianza elevada no garantiza una clasificación correcta..
+:::
+
+## Mapa interactivo · aplicación pública de GEE {#mapa-gee}
+
+::: {.content-visible when-format="revealjs"}
+<iframe id="gee-app" title="Aplicación GEE de clasificación costera" src="about:blank" style="width:100%;height:650px;border:1px solid #b8cbd5;border-radius:10px;background:#f2f6f9" loading="lazy"></iframe>
+<script>
+(function(){
+ const url='https://ee-geofis.projects.earthengine.app/view/lc-rd'; // Reemplazar por la URL pública de la app una vez desplegada
+ const f=document.getElementById('gee-app');
+ if(url){f.src=url;}else{f.srcdoc='<div style="font:20px system-ui;text-align:center;padding:100px 30px;color:#29465a"><b>Aplicación pública GEE</b><p>El código funcional de la aplicación está incluido en el directorio linea-de-costa-rd.</p></div>';}
+})();
+</script>
+:::
+
+## Alternativa, por si nos quedamos sin internet
+
+![](figuras/alternativa_gee_interactiva.jpg){fig-align="center"}
+
+## De la clasificación a CoastSat
+
+- **U-Net** → selección de tramos arenosos candidatos
+
+- **CoastSat** → extracción de posiciones multitemporales
+  de la línea de costa
+
+- **Transectos** → desplazamientos, tendencias y
+  heterogeneidad espacial
+
+- **Diagnóstico** → erosión, acreción, estabilidad y
+  priorización del seguimiento
+
+
+## Trudillé: ejemplo de aplicación CoastSat
+(Apoyo a Gladys Rosado y su equipo, CIBIMA)
+
+Casi 700 escenas disponibles desde 1985, ~400 aprovechables.
+
+::: {.center}
+![](figuras/mapa_control_transectos.png){fig-align="center"}
+:::
+
+##
+
+![](figuras/cobertura_temporal.png){fig-align="center"}
+
+
+##
+
+![](figuras/mapa_clases_LRR.png){fig-align="center"}
+
+::: {.smaller}
+Ejemplo procedente del análisis previo de Trudillé. Ilustra la etapa de diagnóstico posterior a la selección de playas, no una validación del clasificador U-Net.
+:::
+
+## Trudillé: evolución temporal
+
+![](figuras/evolucion_global.png){width="92%"}
+
+## Trudillé: tendencias y modelos
+
+![](figuras/concordancia_mixto_LRR.png){fig-align="center"}
+
+
+## Trudillé: tendencias y modelos
+
+![](figuras/mapa_tasas_mixtas.png){fig-align="center"}
+
+## Limitaciones y controles necesarios
+
+- Validación V5 limitada para playa arenosa (**468 píxeles** en el conjunto de validación reportado).
+- Posibles errores de confusión entre superficies claras, arena y ambientes artificiales.
+- Solapes de sectores: consolidar sin doble conteo antes de publicar superficies nacionales.
+- Evaluación espacial independiente y revisión experta de tramos seleccionados.
+- En CoastSat: resolución, nubosidad, oleaje, mareas y calidad de transectos.
+
+## Perspectivas
+
+1. Refinar etiquetas y ampliar muestras de playas y costas difíciles.
+2. Construir una validación espacial independiente y por tipologías de costa.
+3. Convertir píxeles de playa en **tramos costeros candidatos**, con continuidad y longitud.
+4. Publicar mapas interactivos y productos abiertos reproducibles.
+5. Aplicar CoastSat y el cuaderno de análisis de Trudillé a playas seleccionadas de todo el país.
+
+## Conclusiones
+
+- Se implementó un flujo operativo **GEE → U-Net/Colab → cartografía sectorial**.
+- La inferencia cubre **siete sectores** del corredor litoral dominicano.
+- El desempeño de playa es prometedor, pero requiere validación adicional antes de afirmaciones nacionales definitivas.
+- El resultado aporta una **base para seleccionar tramos de seguimiento con CoastSat**.
+
+**Gracias.**

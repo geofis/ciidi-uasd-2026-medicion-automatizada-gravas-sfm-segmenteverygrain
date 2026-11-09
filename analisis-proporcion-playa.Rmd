@@ -1,0 +1,649 @@
+---
+title: "Longitud y proporción de costa arenosa de República Dominicana"
+subtitle: "Clasificación U-Net y umbrales de probabilidad sobre la línea S2Coast"
+author: "Análisis reproducible"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+    toc_depth: 3
+    number_sections: true
+    df_print: paged
+---
+
+# Objetivo y criterio de medición
+
+Este cuaderno estima la longitud de línea costera que coincide con la clase **playa arenosa (2)** y con distintos umbrales de la probabilidad de playa. El denominador principal es la longitud total de S2Coast incluida en el archivo; se presenta también el porcentaje condicionado a los tramos con datos válidos de inferencia.
+
+**Precaución:** la estimación se basa en puntos regularmente distribuidos a lo largo de la polilínea y ponderados por la longitud representada. No es una intersección geométrica exacta entre cada segmento de línea y cada celda ráster. La resolución del ráster, la precisión y fecha de S2Coast, y los desplazamientos entre la línea y la playa cartografiada afectan el resultado. Un píxel clasificado como playa cerca de la línea, pero no exactamente sobre ella, no se contabiliza en el análisis principal.
+
+# Preparación
+
+```{r paquetes, message=FALSE, warning=FALSE}
+paquetes <- c("sf", "terra", "dplyr", "tidyr", "ggplot2", "knitr", "scales", "lwgeom")
+faltantes <- setdiff(paquetes, rownames(installed.packages()))
+if (length(faltantes)) {
+  stop("Instala primero los paquetes: ", paste(faltantes, collapse = ", "))
+}
+invisible(lapply(paquetes, library, character.only = TRUE))
+options(scipen = 999)
+```
+
+```{r configuracion}
+# Ejecutar el cuaderno desde la raíz del repositorio.
+# Si se ejecuta desde el directorio padre, se detecta automáticamente.
+raiz <- "."
+if (!dir.exists(file.path(raiz, "datos"))) {
+  candidata <- "ciidi-uasd-2026-deteccion-automatizada-tramos-costeros-arenosos"
+  if (dir.exists(file.path(candidata, "datos"))) raiz <- candidata
+}
+
+ruta_linea <- file.path(
+  raiz, "datos", "delimitacion-ambito-linea-costa",
+  "rd-s2coast-2023-mas-de-9-km2-lineas.gpkg"
+)
+ruta_clases <- file.path(
+  raiz, "datos", "inferencia-por-sectores",
+  "todos-los-sectores-clases.vrt"
+)
+ruta_prob <- file.path(
+  raiz, "datos", "inferencia-por-sectores",
+  "todos-los-sectores-clases-probabilidad.vrt"
+)
+
+rutas <- c(linea = ruta_linea, clases = ruta_clases, probabilidad = ruta_prob)
+if (any(!file.exists(rutas))) {
+  stop("No se encontraron estos archivos:\n",
+       paste(rutas[!file.exists(rutas)], collapse = "\n"))
+}
+
+# Ajustables según el estudio
+clase_playa <- 2L
+umbrales <- seq(0.1, 0.9, by = 0.1)
+# CRS métrico de trabajo: UTM 19N, apropiado para gran parte de RD.
+# En el extremo occidental y oriental hay distorsión; para longitud
+# nacional de máxima precisión puede sustituirse por un CRS equidistante
+# diseñado para el área de estudio.
+crs_metrico <- "EPSG:32619"
+
+# Distancia entre puntos: NULL => mitad del tamaño de píxel menor.
+# Un valor explícito (p. ej. 5) está expresado en metros.
+paso_m <- NULL
+
+# Límite de puntos por bloque para controlar la memoria.
+tamano_bloque <- 30000L
+
+# No se realiza búsqueda del píxel más cercano: extracción estricta
+# en la posición de la línea S2Coast.
+directorio_salida <- file.path(raiz, "resultados", "proporcion-playa")
+dir.create(directorio_salida, recursive = TRUE, showWarnings = FALSE)
+```
+
+# Lectura y comprobación espacial
+
+```{r lectura}
+linea <- sf::st_read(ruta_linea, quiet = TRUE)
+clases <- terra::rast(ruta_clases)
+probabilidad <- terra::rast(ruta_prob)
+
+if (is.na(sf::st_crs(linea))) stop("La línea no tiene CRS definido.")
+if (is.na(terra::crs(clases)) || is.na(terra::crs(probabilidad))) {
+  stop("Uno de los rásteres carece de CRS.")
+}
+if (terra::nlyr(clases) != 1L || terra::nlyr(probabilidad) != 1L) {
+  stop("Se esperaba una banda por VRT. Revisa las capas disponibles.")
+}
+
+# Comprobar que la banda de probabilidad está en escala 0–1.
+# No se normaliza automáticamente: una escala 0–100 requiere revisión.
+linea <- sf::st_transform(linea, crs_metrico)
+linea <- sf::st_make_valid(linea)
+linea <- sf::st_collection_extract(linea, "LINESTRING", warn = FALSE)
+linea <- sf::st_cast(linea, "LINESTRING", warn = FALSE)
+linea <- linea[!sf::st_is_empty(linea), , drop = FALSE]
+linea <- linea[as.numeric(sf::st_length(linea)) > 0, , drop = FALSE]
+linea$id_linea <- seq_len(nrow(linea))
+
+info <- tibble::tibble(
+  fuente = c("S2Coast", "Clases", "Probabilidad"),
+  crs = c(sf::st_crs(linea)$input, terra::crs(clases, proj = TRUE),
+          terra::crs(probabilidad, proj = TRUE)),
+  elementos = c(nrow(linea), terra::ncell(clases), terra::ncell(probabilidad))
+)
+knitr::kable(info, caption = "Inventario de fuentes espaciales")
+```
+
+```{r diagnostico-resolucion}
+# Resolución aproximada en metros en el centro del ámbito de la línea.
+centro <- sf::st_centroid(sf::st_union(sf::st_geometry(linea)))
+centro_lonlat <- sf::st_transform(centro, 4326)
+centro_xy <- sf::st_coordinates(centro_lonlat)[1, ]
+
+resolucion_m <- function(r, lon, lat) {
+  r_m <- terra::project(r, crs_metrico, method = "near")
+  # La reproyección anterior solo se usa para estimar la resolución;
+  # los valores de inferencia se extraen de los VRT originales.
+  min(terra::res(r_m))
+}
+
+# Evitar reproyectar grandes rásteres completos solo para conocer
+# su resolución: estimación local desde el CRS de origen.
+resolucion_local <- function(r, lon, lat) {
+  p <- terra::vect(data.frame(x = lon, y = lat),
+                   geom = c("x", "y"), crs = "EPSG:4326")
+  p_r <- terra::project(p, terra::crs(r))
+  xy <- terra::crds(p_r)[1, ]
+  delta <- terra::res(r)
+  vecinos <- rbind(xy,
+                   xy + c(delta[1], 0),
+                   xy + c(0, delta[2]))
+  v <- terra::vect(as.data.frame(vecinos),
+                   geom = c("x", "y"), crs = terra::crs(r))
+  v_m <- terra::project(v, crs_metrico)
+  coords <- terra::crds(v_m)
+  c(sqrt(sum((coords[2, ] - coords[1, ])^2)),
+    sqrt(sum((coords[3, ] - coords[1, ])^2)))
+}
+
+res_clases <- resolucion_local(clases, centro_xy[1], centro_xy[2])
+res_prob <- resolucion_local(probabilidad, centro_xy[1], centro_xy[2])
+if (is.null(paso_m)) paso_m <- min(c(res_clases, res_prob)) / 2
+if (!is.finite(paso_m) || paso_m <= 0) stop("Paso de muestreo inválido")
+
+knitr::kable(
+  data.frame(
+    fuente = c("Clases", "Probabilidad"),
+    resolucion_x_m = round(c(res_clases[1], res_prob[1]), 2),
+    resolucion_y_m = round(c(res_clases[2], res_prob[2]), 2)
+  ),
+  caption = "Tamaño aproximado del píxel en el centro del área (m)"
+)
+cat("Paso de muestreo empleado:", round(paso_m, 2), "m\n")
+```
+
+# Muestreo de la línea y extracción de predicciones
+
+Se colocan puntos en el centro de intervalos de igual longitud de cada entidad lineal. Cada punto representa exactamente `longitud_de_entidad / número_de_puntos` metros; esto evita perder longitud en los extremos. Se extraen las dos capas **sin interpolación** (vecino más cercano / celda que contiene el punto).
+
+```{r muestreo, cache=TRUE}
+longitudes <- as.numeric(sf::st_length(linea))
+n_por_linea <- pmax(1L, ceiling(longitudes / paso_m))
+numero_puntos <- sum(n_por_linea)
+longitud_total_km <- sum(longitudes) / 1000
+cat("Longitud total de S2Coast:", round(longitud_total_km, 3), "km\n")
+cat("Puntos de muestreo:", format(numero_puntos, big.mark = ","), "\n")
+
+# Generar y extraer en bloques para no mantener todos los puntos
+# y geometrías en memoria simultáneamente.
+extraer_linea <- function(i) {
+  n <- n_por_linea[i]
+  fracciones <- (seq_len(n) - 0.5) / n
+  puntos <- sf::st_line_sample(sf::st_geometry(linea[i, ]),
+                               sample = fracciones)
+  puntos <- sf::st_cast(puntos, "POINT")
+  xy <- sf::st_coordinates(puntos)[, 1:2, drop = FALSE]
+  tibble::tibble(
+    id_linea = i,
+    x = xy[, 1],
+    y = xy[, 2],
+    longitud_m = rep(longitudes[i] / n, n)
+  )
+}
+
+# Procesar por entidades, subdividiendo automáticamente líneas muy largas.
+# Las listas de resultados se combinan al final; para líneas nacionales
+# extensas puede ser conveniente aumentar paso_m si falta memoria.
+resultados <- vector("list", nrow(linea))
+for (i in seq_len(nrow(linea))) {
+  pts <- extraer_linea(i)
+  valores_clase <- rep(NA_real_, nrow(pts))
+  valores_prob <- rep(NA_real_, nrow(pts))
+  for (inicio in seq.int(1L, nrow(pts), by = tamano_bloque)) {
+    fin <- min(inicio + tamano_bloque - 1L, nrow(pts))
+    idx <- inicio:fin
+    v <- terra::vect(as.data.frame(pts[idx, c("x", "y")]),
+                     geom = c("x", "y"), crs = crs_metrico)
+    v_cl <- terra::project(v, terra::crs(clases))
+    v_pr <- terra::project(v, terra::crs(probabilidad))
+    valores_clase[idx] <- terra::extract(clases, v_cl)[[2]]
+    valores_prob[idx] <- terra::extract(probabilidad, v_pr)[[2]]
+  }
+  resultados[[i]] <- dplyr::mutate(
+    pts,
+    clase = valores_clase,
+    prob = valores_prob
+  )
+  if (i %% 100 == 0L) message("Procesadas ", i, " de ", nrow(linea), " líneas")
+}
+muestras <- dplyr::bind_rows(resultados)
+rm(resultados)
+
+# Distinguir ausencia de datos de probabilidad cero.
+muestras <- muestras |>
+  dplyr::mutate(
+    clase_valida = !is.na(clase) & clase %in% 1:5,
+    prob_valida = !is.na(prob) & prob >= 0 & prob <= 1,
+    es_playa = clase_valida & clase == clase_playa
+  )
+
+if (any(!is.na(muestras$prob) & !muestras$prob_valida)) {
+  warning("Hay probabilidades fuera de [0,1]; se excluyen. Revisa la escala del VRT.")
+}
+
+saveRDS(muestras, file.path(directorio_salida, "muestras-linea.rds"))
+```
+
+# Exportación de segmentos costeros a GeoPackage
+
+Se reconstruyen **tramos lineales monoparte** a partir de la geometría original de
+S2Coast, conservando sus vértices intermedios. Cada punto muestreado representa
+un intervalo de la línea; los límites entre intervalos se sitúan a mitad de
+camino entre puntos de muestreo consecutivos. Los intervalos contiguos con la
+misma decisión se agrupan en un único tramo mediante `lwgeom::st_linesubstring()`.
+
+Se exportan **diez GeoPackage independientes**: uno para la clasificación
+multiclase (clases 1–5 y categoría 0 = sin datos) y uno para cada uno de los
+nueve umbrales de probabilidad (playa, no playa y sin datos). Los tramos sin
+datos se conservan expresamente para que la suma de las longitudes represente
+la totalidad de S2Coast. Las geometrías son `LINESTRING`, no `MULTILINESTRING`. Para cada GeoPackage se copia también el estilo QGIS `costa_segmentada_vectorial.qml`, con el mismo nombre base que el archivo `.gpkg`, en su misma carpeta. El contenido del estilo se conserva sin modificaciones.
+
+**Interpretación:** los límites de los tramos son aproximaciones basadas en el
+muestreo regular, no intersecciones exactas con los bordes de las celdas ráster.
+Las longitudes geométricas exportadas pueden diferir mínimamente de las sumas
+ponderadas por el muestreo por efectos numéricos.
+
+```{r exportacion-gpkg, cache=FALSE}
+# Ejecutar después del bloque «muestreo». No se modifica la tabla «muestras».
+directorio_gpkg <- file.path(directorio_salida, "gpkg")
+dir.create(directorio_gpkg, recursive = TRUE, showWarnings = FALSE)
+
+# Estilo QGIS de referencia, compartido por todos los GeoPackage.
+ruta_qml <- file.path(directorio_salida, "costa_segmentada_vectorial.qml")
+if (!file.exists(ruta_qml)) {
+  stop("No se encuentra el estilo QGIS: ", ruta_qml)
+}
+
+# Los puntos de «muestras» están ordenados a lo largo de cada id_linea.
+# La posición j representa el intervalo [(j-1)/n, j/n] de esa línea.
+segmentar_criterio <- function(muestras, linea, criterio, umbral = NA_real_) {
+  stopifnot(criterio %in% c("clases", "probabilidad"))
+  indices <- split(seq_len(nrow(muestras)), muestras$id_linea)
+  geometria <- vector("list", 0L)
+  atributos <- vector("list", 0L)
+  contador <- 0L
+
+  for (id_txt in names(indices)) {
+    idx <- indices[[id_txt]]
+    id <- as.integer(id_txt)
+    datos <- muestras[idx, , drop = FALSE]
+    n <- nrow(datos)
+    if (!n) next
+
+    if (criterio == "clases") {
+      # 0 = sin datos; 1–5 = clases originales de la U-Net.
+      codigo <- ifelse(datos$clase_valida, as.integer(datos$clase), 0L)
+      etiquetas <- c("Sin datos", "Urbano/artificial", "Playa arenosa",
+                     "Agua", "Vegetación", "Roca/acantilado")
+    } else {
+      # 0 = sin datos; 1 = no playa; 2 = playa (prob >= umbral).
+      codigo <- ifelse(!datos$prob_valida, 0L,
+                       ifelse(datos$prob >= umbral, 2L, 1L))
+      etiquetas <- c("Sin datos", "No playa", "Playa arenosa")
+    }
+
+    # Agrupar intervalos consecutivos de idéntica categoría.
+    corridas <- rle(codigo)
+    finales <- cumsum(corridas$lengths)
+    inicios <- finales - corridas$lengths + 1L
+    linea_geom <- sf::st_geometry(linea[id, ])
+
+    for (j in seq_along(finales)) {
+      desde <- (inicios[j] - 1) / n
+      hasta <- finales[j] / n
+      # Subcadena de la línea original; preserva los vértices interiores.
+      trozo <- lwgeom::st_linesubstring(linea_geom, desde, hasta)
+      if (sf::st_is_empty(trozo)[1]) next
+      # st_linesubstring() de una LINESTRING devuelve una LINESTRING.
+      tipo <- as.character(sf::st_geometry_type(trozo))[1]
+      if (tipo != "LINESTRING") {
+        stop("Geometría inesperada: ", tipo, " en id_linea ", id)
+      }
+
+      contador <- contador + 1L
+      geometria[[contador]] <- trozo[[1]]
+      atributos[[contador]] <- data.frame(
+        id_linea = id,
+        categoria = as.integer(corridas$values[j]),
+        etiqueta = etiquetas[corridas$values[j] + 1L],
+        umbral = if (criterio == "clases") NA_real_ else umbral,
+        n_muestras = as.integer(corridas$lengths[j]),
+        longitud_m_muestreo = sum(datos$longitud_m[inicios[j]:finales[j]]),
+        stringsAsFactors = FALSE
+      )
+    }
+    if (id %% 100L == 0L) {
+      message(criterio, " ", umbral, ": procesadas ", id,
+              " de ", nrow(linea), " líneas")
+    }
+  }
+
+  if (!contador) stop("No se generaron segmentos para ", criterio)
+  tabla <- dplyr::bind_rows(atributos)
+  sf_segmentos <- sf::st_sf(
+    tabla,
+    geometry = sf::st_sfc(geometria, crs = sf::st_crs(linea))
+  )
+  sf_segmentos$longitud_m_geom <- as.numeric(sf::st_length(sf_segmentos))
+  sf_segmentos
+}
+
+exportar_gpkg <- function(objeto, nombre_archivo) {
+  destino <- file.path(directorio_gpkg, nombre_archivo)
+  if (file.exists(destino)) unlink(destino)
+  sf::st_write(objeto, destino, layer = "segmentos", quiet = TRUE)
+
+  # QGIS reconoce automáticamente un archivo .qml con el mismo nombre base
+  # que el GeoPackage, situado en su mismo directorio.
+  destino_qml <- file.path(
+    dirname(destino),
+    paste0(tools::file_path_sans_ext(basename(destino)), ".qml")
+  )
+  copiado <- file.copy(ruta_qml, destino_qml, overwrite = TRUE)
+  if (!copiado) stop("No se pudo copiar el estilo a: ", destino_qml)
+  invisible(destino)
+}
+
+resumen_gpkg <- list()
+
+# 1. Clasificación multiclase.
+segmentos_clases <- segmentar_criterio(muestras, linea, "clases")
+archivo_clases <- "costa_segmentada_clases.gpkg"
+exportar_gpkg(segmentos_clases, archivo_clases)
+resumen_gpkg[[1L]] <- data.frame(
+  producto = "Clasificación U-Net",
+  archivo = archivo_clases,
+  n_segmentos = nrow(segmentos_clases),
+  longitud_km = sum(segmentos_clases$longitud_m_geom) / 1000,
+  longitud_playa_km = sum(segmentos_clases$longitud_m_geom[
+    segmentos_clases$categoria == clase_playa]) / 1000
+)
+rm(segmentos_clases)
+
+# 2. Nueve decisiones binarias por umbral de probabilidad.
+for (k in seq_along(umbrales)) {
+  u <- umbrales[k]
+  segmentos_prob <- segmentar_criterio(
+    muestras, linea, "probabilidad", umbral = u
+  )
+  nombre <- sprintf("costa_segmentada_prob_%02d.gpkg", round(100 * u))
+  exportar_gpkg(segmentos_prob, nombre)
+  resumen_gpkg[[k + 1L]] <- data.frame(
+    producto = sprintf("Probabilidad >= %.1f", u),
+    archivo = nombre,
+    n_segmentos = nrow(segmentos_prob),
+    longitud_km = sum(segmentos_prob$longitud_m_geom) / 1000,
+    longitud_playa_km = sum(segmentos_prob$longitud_m_geom[
+      segmentos_prob$categoria == 2L]) / 1000
+  )
+  rm(segmentos_prob)
+}
+
+tabla_exportacion <- dplyr::bind_rows(resumen_gpkg) |>
+  dplyr::mutate(
+    diferencia_total_m = (longitud_km - longitud_total_km) * 1000
+  )
+knitr::kable(
+  tabla_exportacion, digits = 3,
+  caption = "Archivos GeoPackage y comprobación de longitudes geométricas"
+)
+write.csv(
+  tabla_exportacion,
+  file.path(directorio_salida, "tabla_exportacion_gpkg.csv"),
+  row.names = FALSE
+)
+
+# Advertencia si hay una diferencia relevante en la longitud total.
+if (any(abs(tabla_exportacion$diferencia_total_m) >
+        max(1, 0.0001 * longitud_total_km * 1000))) {
+  warning("Las longitudes geométricas de los GPKG difieren de la ",
+          "longitud de S2Coast; revisar segmentación y geometrías.")
+}
+```
+
+Los archivos se guardan en `r directorio_gpkg`. En QGIS se pueden simbolizar
+por el campo `categoria` o por `etiqueta`. Para la clasificación, el código 2
+representa playa; para cada umbral, el código 2 también representa playa, el 1
+representa no playa y el 0 indica ausencia de datos.
+
+# Cobertura efectiva de los rásteres
+
+```{r cobertura}
+resumen_cobertura <- tibble::tibble(
+  producto = c("Clasificación", "Probabilidad", "Ambos productos"),
+  longitud_valida_km = c(
+    sum(muestras$longitud_m[muestras$clase_valida]),
+    sum(muestras$longitud_m[muestras$prob_valida]),
+    sum(muestras$longitud_m[muestras$clase_valida & muestras$prob_valida])
+  ) / 1000
+) |>
+  dplyr::mutate(
+    longitud_s2coast_km = longitud_total_km,
+    cobertura_pct = 100 * longitud_valida_km / longitud_s2coast_km,
+    longitud_sin_datos_km = longitud_s2coast_km - longitud_valida_km
+  )
+
+knitr::kable(
+  resumen_cobertura, digits = 2,
+  caption = "Cobertura de inferencia sobre la longitud total de S2Coast"
+)
+write.csv(resumen_cobertura,
+          file.path(directorio_salida, "tabla_cobertura.csv"),
+          row.names = FALSE)
+```
+
+# Resultados: clasificación multiclase
+
+```{r tabla-clasificacion}
+longitud_clasificada_km <- sum(muestras$longitud_m[muestras$clase_valida]) / 1000
+longitud_playa_km <- sum(muestras$longitud_m[muestras$es_playa]) / 1000
+
+resumen_clases <- tibble::tibble(
+  criterio = "U-Net: clase 2 (playa)",
+  longitud_playa_km = longitud_playa_km,
+  longitud_con_datos_km = longitud_clasificada_km,
+  longitud_total_s2coast_km = longitud_total_km,
+  porcentaje_total = 100 * longitud_playa_km / longitud_total_km,
+  porcentaje_con_datos = if (longitud_clasificada_km > 0)
+    100 * longitud_playa_km / longitud_clasificada_km else NA_real_
+)
+knitr::kable(resumen_clases, digits = 2,
+             caption = "Longitud de playa obtenida de la clasificación U-Net")
+write.csv(resumen_clases,
+          file.path(directorio_salida, "tabla_clasificacion_playa.csv"),
+          row.names = FALSE)
+
+etiquetas_clase <- c("Urbano/artificial", "Playa arenosa", "Agua",
+                     "Vegetación", "Roca/acantilado")
+tabla_todas_clases <- muestras |>
+  dplyr::filter(clase_valida) |>
+  dplyr::group_by(clase) |>
+  dplyr::summarise(longitud_km = sum(longitud_m) / 1000, .groups = "drop") |>
+  tidyr::complete(clase = 1:5, fill = list(longitud_km = 0)) |>
+  dplyr::mutate(
+    nombre_clase = etiquetas_clase[as.integer(clase)],
+    porcentaje_total = 100 * longitud_km / longitud_total_km,
+    porcentaje_con_datos = if (longitud_clasificada_km > 0)
+      100 * longitud_km / longitud_clasificada_km else NA_real_
+  )
+knitr::kable(tabla_todas_clases, digits = 2,
+             caption = "Longitud costera por clase U-Net")
+write.csv(tabla_todas_clases,
+          file.path(directorio_salida, "tabla_todas_las_clases.csv"),
+          row.names = FALSE)
+```
+
+```{r grafico-clases, fig.width=9, fig.height=5}
+g_clases <- ggplot(tabla_todas_clases,
+                   aes(x = reorder(nombre_clase, longitud_km), y = longitud_km)) +
+  geom_col(fill = "#317b92", width = 0.7) +
+  coord_flip() +
+  geom_text(aes(label = sprintf("%.1f km", longitud_km)),
+            hjust = -0.08, size = 3.5) +
+  scale_y_continuous(expand = expansion(mult = c(0, 0.16))) +
+  labs(x = NULL, y = "Longitud de costa (km)",
+       title = "Longitud costera por clase U-Net") +
+  theme_minimal(base_size = 12)
+print(g_clases)
+ggsave(file.path(directorio_salida, "longitud_por_clase.png"),
+       g_clases, width = 9, height = 5, dpi = 300)
+```
+
+# Resultados: umbrales de probabilidad
+
+La regla para cada umbral es `probabilidad de playa >= umbral`. Esta **no necesariamente coincide** con la regla usada para producir el mapa multiclase (`argmax`), por lo que ambos productos deben presentarse por separado.
+
+```{r tabla-umbrales}
+longitud_prob_valida_km <- sum(muestras$longitud_m[muestras$prob_valida]) / 1000
+
+tabla_umbrales <- dplyr::bind_rows(lapply(umbrales, function(u) {
+  km <- sum(muestras$longitud_m[muestras$prob_valida &
+                                 muestras$prob >= u]) / 1000
+  tibble::tibble(
+    umbral = u,
+    longitud_playa_km = km,
+    longitud_con_datos_km = longitud_prob_valida_km,
+    longitud_total_s2coast_km = longitud_total_km,
+    porcentaje_total = 100 * km / longitud_total_km,
+    porcentaje_con_datos = if (longitud_prob_valida_km > 0)
+      100 * km / longitud_prob_valida_km else NA_real_
+  )
+}))
+
+knitr::kable(tabla_umbrales, digits = 2,
+             caption = "Longitud y proporción de playa según umbral de probabilidad")
+write.csv(tabla_umbrales,
+          file.path(directorio_salida, "tabla_umbrales_probabilidad.csv"),
+          row.names = FALSE)
+```
+
+```{r grafico-umbrales, fig.width=9, fig.height=5}
+g_umbrales <- ggplot(tabla_umbrales,
+                     aes(x = umbral, y = longitud_playa_km)) +
+  geom_line(color = "#075a7a", linewidth = 1) +
+  geom_point(color = "#075a7a", size = 2.5) +
+  scale_x_continuous(breaks = umbrales,
+                     labels = scales::number_format(accuracy = 0.1)) +
+  labs(x = "Umbral mínimo de probabilidad de playa",
+       y = "Longitud de costa (km)",
+       title = "Sensibilidad de la longitud de playa al umbral") +
+  theme_minimal(base_size = 12)
+print(g_umbrales)
+ggsave(file.path(directorio_salida, "longitud_segun_umbral.png"),
+       g_umbrales, width = 9, height = 5, dpi = 300)
+```
+
+```{r grafico-proporciones, fig.width=9, fig.height=5}
+tabla_larga <- tabla_umbrales |>
+  dplyr::select(umbral, porcentaje_total, porcentaje_con_datos) |>
+  tidyr::pivot_longer(-umbral, names_to = "denominador", values_to = "porcentaje") |>
+  dplyr::mutate(denominador = dplyr::recode(
+    denominador,
+    porcentaje_total = "Toda la línea S2Coast",
+    porcentaje_con_datos = "Solo costa con probabilidad válida"
+  ))
+g_prop <- ggplot(tabla_larga,
+                 aes(x = umbral, y = porcentaje, color = denominador)) +
+  geom_line(linewidth = 1) +
+  geom_point(size = 2) +
+  scale_x_continuous(breaks = umbrales) +
+  labs(x = "Umbral mínimo de probabilidad", y = "Proporción de costa (%)",
+       color = "Denominador", title = "Proporción de costa arenosa") +
+  theme_minimal(base_size = 12) +
+  theme(legend.position = "bottom")
+print(g_prop)
+ggsave(file.path(directorio_salida, "proporcion_segun_umbral.png"),
+       g_prop, width = 9, height = 5, dpi = 300)
+```
+
+# Tabla comparativa final
+
+```{r tabla-final}
+tabla_final <- dplyr::bind_rows(
+  resumen_clases |>
+    dplyr::transmute(metodo = criterio, longitud_playa_km,
+                     longitud_con_datos_km, longitud_total_s2coast_km,
+                     porcentaje_total, porcentaje_con_datos),
+  tabla_umbrales |>
+    dplyr::transmute(metodo = sprintf("Probabilidad >= %.2f", umbral),
+                     longitud_playa_km, longitud_con_datos_km,
+                     longitud_total_s2coast_km,
+                     porcentaje_total, porcentaje_con_datos)
+)
+knitr::kable(tabla_final, digits = 2,
+             caption = "Comparación de longitud y proporción de costa arenosa")
+write.csv(tabla_final,
+          file.path(directorio_salida, "tabla_comparativa_final.csv"),
+          row.names = FALSE)
+```
+
+# Concordancia entre clasificación y umbral 0.5
+
+La concordancia permite detectar si la máscara `clase == 2` coincide con `probabilidad >= 0.5`. Las discrepancias no implican necesariamente un error: una clasificación multiclase por `argmax` no exige que la clase ganadora alcance 0.5.
+
+```{r concordancia}
+comparables <- muestras |>
+  dplyr::filter(clase_valida, prob_valida) |>
+  dplyr::mutate(
+    decision_clases = ifelse(clase == clase_playa, "Playa", "No playa"),
+    decision_prob = ifelse(prob >= 0.5, "Playa", "No playa")
+  )
+tabla_concordancia <- comparables |>
+  dplyr::group_by(decision_clases, decision_prob) |>
+  dplyr::summarise(longitud_km = sum(longitud_m) / 1000,
+                   .groups = "drop") |>
+  tidyr::complete(decision_clases = c("Playa", "No playa"),
+                  decision_prob = c("Playa", "No playa"),
+                  fill = list(longitud_km = 0))
+knitr::kable(tabla_concordancia, digits = 2,
+             caption = "Concordancia de decisiones expresada en kilómetros de costa")
+write.csv(tabla_concordancia,
+          file.path(directorio_salida, "tabla_concordancia.csv"),
+          row.names = FALSE)
+```
+
+# Distribución de probabilidades sobre la costa
+
+```{r histograma-probabilidades, fig.width=9, fig.height=5}
+g_hist <- ggplot(muestras |> dplyr::filter(prob_valida),
+                 aes(x = prob, weight = longitud_m / 1000)) +
+  geom_histogram(binwidth = 0.05, boundary = 0, fill = "#2a9d8f",
+                 color = "white") +
+  scale_x_continuous(limits = c(0, 1), breaks = seq(0, 1, 0.1)) +
+  labs(x = "Probabilidad estimada de playa",
+       y = "Longitud de costa (km)",
+       title = "Distribución de probabilidades a lo largo de S2Coast") +
+  theme_minimal(base_size = 12)
+print(g_hist)
+ggsave(file.path(directorio_salida, "histograma_probabilidad_costa.png"),
+       g_hist, width = 9, height = 5, dpi = 300)
+```
+
+# Síntesis automática e interpretación
+
+La línea S2Coast analizada tiene una longitud total de **`r round(longitud_total_km, 2)` km**. La clasificación multiclase asigna **`r round(longitud_playa_km, 2)` km** a playa arenosa, equivalentes al **`r round(resumen_clases$porcentaje_total, 2)` %** de la línea completa y al **`r round(resumen_clases$porcentaje_con_datos, 2)` %** de la longitud con clasificación válida.
+
+Para un umbral de probabilidad de 0.5, la longitud estimada es de **`r round(tabla_umbrales$longitud_playa_km[which.min(abs(tabla_umbrales$umbral - 0.5))], 2)` km**. Este valor debe interpretarse como longitud de S2Coast situada sobre píxeles cuya probabilidad estimada de playa alcanza o supera el umbral; **no** como una medición independiente de la anchura o superficie de la playa.
+
+## Limitaciones y comprobaciones pendientes
+
+1. **Cobertura espacial:** las proporciones sobre toda S2Coast incluyen en el denominador tramos sin inferencia. Para comparar desempeño dentro del área procesada, usar también el porcentaje sobre longitud con datos válidos.
+2. **Desfase espacial:** S2Coast (2023) y las predicciones (2025) pueden diferir por cambios costeros, mareas, precisión de georreferenciación y definición de la línea de costa.
+3. **Contacto geométrico:** el método principal toma el valor exactamente bajo la línea. Si se busca la *longitud de frente costero asociado a una playa cercana*, será necesario un segundo análisis con banda costera y una regla explícita de vecindad (por ejemplo, presencia de playa en un radio definido hacia tierra).
+4. **Resolución:** el muestreo subpíxel mejora la aproximación a la longitud, pero no añade resolución espacial a los mapas.
+5. **CRS y precisión:** UTM 19N introduce distorsiones fuera de su zona central; evaluar una proyección adecuada para la extensión nacional o mediciones geodésicas para una publicación definitiva.
+6. **Mosaicos VRT:** verificar solapamientos, NoData, orden de prioridad y que el VRT de probabilidad realmente almacene valores de 0 a 1.
+7. **Validación:** estos resultados cuantifican predicciones del modelo, no la longitud real de playa observada. Deben contrastarse con datos independientes cuando estén disponibles.
+
+## Archivos generados
+
+Las tablas CSV, las figuras PNG y las muestras extraídas se guardan en `r directorio_salida`. Los diez GeoPackage de líneas monoparte y sus diez estilos `.qml` homónimos se guardan en `r directorio_gpkg`.
