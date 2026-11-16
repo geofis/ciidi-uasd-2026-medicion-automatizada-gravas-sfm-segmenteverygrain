@@ -6,7 +6,5 @@
 /.quarto/
 
 # Propios
-colab/
-datos/
-gee-linea-de-costa-rd/
+datos/odm_orthophoto_jpg*
 *_cache/

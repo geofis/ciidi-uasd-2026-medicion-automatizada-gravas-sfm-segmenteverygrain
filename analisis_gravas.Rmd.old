@@ -1,0 +1,452 @@
+---
+title: "Río Mana: granulometría superficial automatizada mediante SfM y SegmentEveryGrain"
+subtitle: "Bitácora reproducible de análisis, control de calidad y cartografía — inventario integral y control de calidad"
+author: "Equipo de investigación"
+date: "`r format(Sys.Date(), '%d/%m/%Y')`"
+output:
+  html_document:
+    toc: true
+    toc_depth: 3
+    number_sections: true
+    df_print: paged
+---
+
+```{r configuracion, include=FALSE}
+knitr::opts_chunk$set(echo=TRUE, message=FALSE, warning=FALSE,
+                      fig.width=10, fig.height=6, dpi=160,
+                      fig.path='figuras/knitr_')
+options(scipen=999, digits=4)
+paquetes <- c('dplyr','tidyr','readr','purrr','stringr','ggplot2',
+              'sf','jsonlite','tibble','scales','knitr')
+faltan <- paquetes[!vapply(paquetes, requireNamespace, logical(1), quietly=TRUE)]
+if (length(faltan)) stop('Instale paquetes: ', paste(faltan, collapse=', '))
+invisible(lapply(paquetes, library, character.only=TRUE))
+# Ejecutar desde la raíz del repositorio o cambiar esta ruta relativa.
+BASE <- 'resultados/resultados_completo'
+ANALISIS <- file.path(BASE, 'analisis_cientifico')
+FIG <- 'figuras'
+DIR_TAB <- 'tablas'
+GPKG <- file.path(BASE, 'granos_mana.gpkg')
+dir.create(FIG, showWarnings=FALSE, recursive=TRUE)
+dir.create(DIR_TAB, showWarnings=FALSE, recursive=TRUE)
+# Mantener anclaje UTM de la malla en futuras actualizaciones.
+EPSG <- 32619
+CELDA_M <- 1
+MIN_N_CELDA <- 30L
+MIN_N_TESELA <- 20L
+EXCLUIR_BORDES <- TRUE
+# Valor solo para sensibilidad, no como umbral validado de detección.
+UMBRAL_MIN_MM <- c(10, 15, 20, 25)
+# Parámetros de inferencia exploratoria.
+B_REP <- 300L
+set.seed(2026)
+# La malla de segmentación es de 1024 px, paso 896 px, resolución ~1 mm.
+TAM_PX <- 1024L
+PASO_PX <- 896L
+RES_M <- mean(c(0.0009999757,0.0009999682))
+# Sin validación externa: no inferir exactitud dimensional.
+exportar <- function(p, nombre, ancho=10, alto=6) {
+  ggplot2::ggsave(file.path(FIG,paste0(nombre,'.png')),p,
+                  width=ancho,height=alto,dpi=250,bg='white')
+  ggplot2::ggsave(file.path(FIG,paste0(nombre,'.pdf')),p,
+                  width=ancho,height=alto,bg='white')
+  print(p)
+}
+guardar_csv <- function(x,nombre) readr::write_csv(x,file.path(DIR_TAB,nombre))
+qseg <- function(x, probs=c(.1,.16,.5,.84,.9)) {
+  x <- x[is.finite(x) & x>0]
+  if (!length(x)) return(rep(NA_real_,length(probs)))
+  as.numeric(stats::quantile(x, probs=probs, names=FALSE, na.rm=TRUE))
+}
+```
+
+# Alcance, preguntas y límites
+
+Este análisis aborda **la medición y cartografía del tamaño superficial proyectado** de clastos en una llanura de inundación del río Mana, utilizando ortofotografía SfM y segmentación automática. El objetivo es describir la distribución granulométrica, su variabilidad espacial y el rendimiento de la detección, **no** declarar validada la exactitud frente a mediciones manuales de 2019 mientras no se incorporen las correspondencias de campo. Las distribuciones son **por número de clastos detectados**, no por masa. Las áreas sin segmentar no representan ausencia de grava.
+
+El cuaderno utiliza el GeoPackage integral `granos_mana.gpkg` como inventario geométrico y los `registro.json` para auditar la ejecución. Nunca se sobrescriben los resultados originales de SegmentEveryGrain. Las figuras se exportan a `figuras/` y las tablas a `tablas/`, en la raíz del repositorio. La consolidación original concatena las geometrías de las teselas; **no garantiza ausencia de duplicados entre teselas**. Los resultados son preliminares hasta completar esa auditoría.
+
+# 1. Inventario de ejecución y cobertura
+
+Se priorizan los `registro.json` por tesela. La existencia de una carpeta no implica que se haya terminado; `sin_datos` y `sin_semillas` son categorías distintas.
+
+```{r auditoria}
+carpetas <- list.dirs(BASE, full.names=TRUE, recursive=FALSE)
+carpetas <- carpetas[grepl('^x[0-9]+_y[0-9]+$', basename(carpetas))]
+leer_registro <- function(carpeta) {
+  f <- file.path(carpeta,'registro.json')
+  reg <- if (file.exists(f)) tryCatch(jsonlite::fromJSON(f),error=function(e) list()) else list()
+  id <- basename(carpeta)
+  nums <- as.integer(unlist(stringr::str_match(id,'^x([0-9]+)_y([0-9]+)$')[,2:3]))
+  tibble(tesela=id, x_px=nums[1], y_px=nums[2],
+         estado=if (!file.exists(f)) 'sin_registro' else as.character(reg$estado %||% 'sin_estado'),
+         completada=file.exists(file.path(carpeta,'completado.ok')),
+         csv=file.exists(file.path(carpeta,'mediciones.csv')),
+         geojson=file.exists(file.path(carpeta,'granos_utm.geojson')),
+         png=file.exists(file.path(carpeta,'segmentacion.png')),
+         semillas=as.numeric(reg$semillas %||% NA_real_),
+         mascaras=as.numeric(reg$mascaras %||% NA_real_),
+         granos=as.numeric(reg$granos_conservados %||% NA_real_),
+         segundos=as.numeric(reg$segundos %||% NA_real_))
+}
+`%||%` <- function(a,b) if (is.null(a) || length(a)==0) b else a
+audit <- purrr::map_dfr(carpetas,leer_registro)
+if (!nrow(audit)) stop('No se encontraron carpetas de teselas en BASE: ',BASE)
+audit <- audit %>% mutate(estado=if_else(estado=='sin_estado' & completada & geojson,
+                                       'completada',estado))
+res_estados <- audit %>% count(estado,name='n_teselas')
+knitr::kable(res_estados)
+guardar_csv(audit,'auditoria_teselas.csv')
+guardar_csv(res_estados,'estados_teselas.csv')
+```
+
+A fecha de renderizado hay `r nrow(audit)` carpetas, de las que `r sum(audit$estado=='completada')` tienen estado de segmentación completada. Hay `r sum(!audit$completada)` carpetas sin marcador final. La cobertura se verifica mediante los registros y la cuadrícula prevista; una tesela `sin_datos` puede estar correctamente finalizada.
+
+```{r mapa-cobertura}
+p_cov <- ggplot(audit,aes(x=x_px*RES_M,y=-y_px*RES_M,fill=estado))+
+  geom_tile(width=PASO_PX*RES_M,height=PASO_PX*RES_M,color=NA)+
+  coord_equal()+scale_fill_brewer(palette='Set2',na.value='grey80')+
+  labs(x='Desplazamiento Este relativo (m)',y='Desplazamiento Norte relativo (m)',
+       fill='Estado',title='Estado de las teselas con carpeta existente',
+       subtitle='No representa todavía la cuadrícula total prevista')+
+  theme_minimal()
+exportar(p_cov,'01_estado_teselas')
+```
+
+# 2. Lectura del GeoPackage integral y control de unidades
+
+Se utiliza **`resultados/resultados_completo/granos_mana.gpkg`** como fuente primaria. No se leen los `mediciones.csv` individuales para las estadísticas. Se conserva el atributo `toca_borde` y la procedencia por tesela. Las mediciones existentes proceden de SegmentEveryGrain: **si se modifica una geometría en QGIS, sus medidas atributivas originales no se actualizan automáticamente**. Hasta implementar la remedición geométrica equivalente a la original, no deben interpretarse estadísticas de geometrías editadas como medidas actualizadas.
+
+```{r mediciones}
+if (!file.exists(GPKG)) stop('No existe el GeoPackage integral: ', GPKG)
+capas <- sf::st_layers(GPKG)
+print(capas)
+if (!'granos' %in% capas$name) stop('Falta la capa granos en ', GPKG)
+poligonos <- sf::st_read(GPKG, layer='granos', quiet=TRUE)
+if (sf::st_crs(poligonos)$epsg != EPSG) {
+  stop('CRS inesperado: se requiere EPSG:', EPSG)
+}
+requeridas <- c('id_grano','tesela','area','perimeter','major_axis_length',
+               'minor_axis_length','toca_borde')
+if (!all(requeridas %in% names(poligonos))) {
+  stop('Faltan atributos: ',paste(setdiff(requeridas,names(poligonos)),collapse=', '))
+}
+if (anyDuplicated(poligonos$id_grano)) {
+  guardar_csv(sf::st_drop_geometry(poligonos) %>%
+    filter(duplicated(id_grano)|duplicated(id_grano,fromLast=TRUE)),
+    'ids_duplicados.csv')
+  stop('Hay IDs duplicados. Revisar tablas/ids_duplicados.csv antes de analizar.')
+}
+cat('Polígonos integrales:',nrow(poligonos),'\n')
+cat('Geometrías vacías:',sum(sf::st_is_empty(poligonos)),'\n')
+cat('Geometrías inválidas:',sum(!sf::st_is_valid(poligonos)),'\n')
+# Coordenadas de centroides obtenidas de la geometría, no de atributos
+# potencialmente redondeados o desactualizados.
+centros <- suppressWarnings(sf::st_coordinates(sf::st_centroid(poligonos)))
+datos <- sf::st_drop_geometry(poligonos)
+datos$x_utm <- centros[,1]
+datos$y_utm <- centros[,2]
+datos <- datos %>%
+  mutate(across(any_of(c('area','perimeter','major_axis_length',
+                         'minor_axis_length')),as.numeric),
+         toca_borde=tolower(as.character(toca_borde))=='true',
+         a_mm=major_axis_length*1000,
+         b_mm=minor_axis_length*1000,
+         area_mm2=area*1e6,
+         perimetro_mm=perimeter*1000,
+         d_equiv_mm=2*sqrt(pmax(area,0)/pi)*1000,
+         razon_ba=b_mm/a_mm,
+         circularidad=4*pi*area/(perimeter^2),
+         qc_valida=is.finite(a_mm)&is.finite(b_mm)&is.finite(area)&
+           a_mm>=b_mm&b_mm>0&area>0&is.finite(x_utm)&is.finite(y_utm))
+principal <- datos %>% filter(qc_valida,if (EXCLUIR_BORDES) !toca_borde else TRUE)
+todos_validos <- datos %>% filter(qc_valida)
+if (!nrow(principal)) stop('Sin clastos válidos para el análisis principal')
+qc <- tibble(indicador=c('clastos exportados','geométricamente válidos',
+                         'marcados como borde','principal'),
+             n=c(nrow(datos),nrow(todos_validos),
+                 sum(datos$toca_borde,na.rm=TRUE),nrow(principal)))
+knitr::kable(qc)
+guardar_csv(qc,'control_calidad.csv')
+guardar_csv(datos,'mediciones_actualizadas.csv')
+```
+
+Se han leído `r nrow(datos)` polígonos; `r nrow(principal)` integran el conjunto principal. Los ejes provienen de los atributos originales de SegmentEveryGrain, expresados en metros y convertidos a milímetros. El eje menor es el de la elipse equivalente, no necesariamente el eje sedimentológico `b` tridimensional. La lectura del GeoPackage **no deduplica automáticamente polígonos entre teselas**.
+
+# 3. Granulometría superficial por número de clastos
+
+```{r percentiles}
+cuantiles <- function(d,etiqueta) {
+  qs <- qseg(d$b_mm)
+  tibble(conjunto=etiqueta,n=nrow(d),D10=qs[1],D16=qs[2],D50=qs[3],D84=qs[4],D90=qs[5],
+         sorting_ratio=qs[4]/qs[2])
+}
+resumen_q <- bind_rows(cuantiles(principal,'principal'),cuantiles(todos_validos,'incluye_bordes'))
+resumen_q <- resumen_q |>
+  dplyr::mutate(
+    sorting_ratio = D84 / D16,
+    sorting_geometrico = sqrt(D84 / D16)
+  )
+knitr::kable(resumen_q,digits=2)
+guardar_csv(resumen_q,'percentiles_conteo_actualizados.csv')
+```
+
+Para el conjunto principal, la mediana del eje menor proyectado es **`r round(median(principal$b_mm),1)` mm** y D84 es **`r round(quantile(principal$b_mm,.84),1)` mm**. Estos valores cambiarán al incorporarse nuevas teselas; por ello, todas las cifras se calculan dinámicamente.
+
+```{r distribucion}
+p_hist <- ggplot(principal,aes(b_mm))+
+  geom_histogram(bins=65,fill='grey55',color='white')+
+  scale_x_log10(labels=scales::label_number())+
+  labs(x='Eje menor proyectado (mm; escala log)',y='Clastos detectados',
+       title='Distribución de tamaños por conteo')+theme_minimal()
+exportar(p_hist,'02_histograma_b_log')
+curva <- principal %>% arrange(b_mm) %>% mutate(acumulado=100*row_number()/n())
+p_cum <- ggplot(curva,aes(b_mm,acumulado))+geom_line(linewidth=.8)+
+  geom_hline(yintercept=c(10,16,50,84,90),linetype='dotted',color='grey65')+
+  labs(x='Eje menor proyectado (mm)',y='Porcentaje acumulado por número',
+       title='Curva acumulada de clastos detectados')+theme_minimal()
+exportar(p_cum,'03_curva_acumulada')
+```
+
+## 3.1. Sensibilidad al tratamiento de bordes y al tamaño mínimo
+
+```{r sensibilidad}
+sens <- purrr::map_dfr(UMBRAL_MIN_MM,function(u) {
+  bind_rows(cuantiles(principal %>% filter(b_mm>=u),'sin_bordes'),
+            cuantiles(todos_validos %>% filter(b_mm>=u),'con_bordes')) %>%
+    mutate(umbral_mm=u)
+})
+guardar_csv(sens,'sensibilidad_umbral_bordes.csv')
+knitr::kable(sens,digits=2)
+p_sens <- ggplot(sens,aes(umbral_mm,D50,color=conjunto))+geom_line()+geom_point()+
+  labs(x='Umbral inferior impuesto al eje menor (mm)',y='D50 (mm)',
+       title='Sensibilidad del D50 al truncamiento y a los bordes')+theme_minimal()
+exportar(p_sens,'04_sensibilidad_D50')
+```
+
+**Advertencia:** la comparación de umbrales es un análisis de sensibilidad, **no estima la eficiencia de detección** ni establece el menor tamaño detectable. Para eso se requiere un recuento manual de referencia en subimágenes.
+
+# 4. Morfometría proyectada
+
+```{r morfometria}
+forma <- principal %>% summarise(n=n(),a_mediana_mm=median(a_mm),b_mediana_mm=median(b_mm),
+  razon_ba_mediana=median(razon_ba,na.rm=TRUE),
+  circularidad_mediana=median(circularidad[is.finite(circularidad)],na.rm=TRUE),
+  spearman_tamano_forma=cor(b_mm,razon_ba,method='spearman',use='complete.obs'))
+knitr::kable(forma,digits=3)
+guardar_csv(forma,'morfometria_resumen.csv')
+p_ab <- ggplot(principal,aes(a_mm,b_mm))+geom_bin2d(bins=65)+
+  scale_fill_viridis_c(trans='log10')+geom_abline(slope=1,intercept=0,linetype='dashed')+
+  coord_equal()+labs(x='Eje mayor proyectado (mm)',y='Eje menor proyectado (mm)',
+                     title='Relación entre dimensiones proyectadas',fill='N')+theme_minimal()
+exportar(p_ab,'05_relacion_ejes')
+p_forma <- principal %>% filter(is.finite(razon_ba),razon_ba>0,razon_ba<=1) %>%
+  ggplot(aes(b_mm,razon_ba))+geom_hex(bins=50)+scale_fill_viridis_c(trans='log10')+
+  scale_x_log10()+labs(x='Eje menor (mm, log)',y='b/a',fill='N',
+                       title='Relación tamaño–elongación proyectada')+theme_minimal()
+# geom_hex necesita hexbin; usar dispersión transparente si no está instalado.
+if (requireNamespace('hexbin',quietly=TRUE)) exportar(p_forma,'06_tamano_elongacion') else {
+  p_forma <- ggplot(principal,aes(b_mm,razon_ba))+geom_point(alpha=.05,size=.3)+
+    scale_x_log10()+labs(x='Eje menor (mm, log)',y='b/a',title='Tamaño y elongación')+theme_minimal()
+  exportar(p_forma,'06_tamano_elongacion')
+}
+```
+
+El cociente b/a describe elongación **en proyección 2D**, no esfericidad ni forma tridimensional. La circularidad es sensible a irregularidades de contorno y fusiones de máscaras.
+
+# 5. Distribución espacial y heterogeneidad
+
+Se emplean centroides en **EPSG:32619**. La malla se ancla a coordenadas UTM, por lo que una actualización de la cobertura no desplaza sus límites. No se interpola sobre áreas aún no procesadas.
+
+```{r centroides-malla}
+puntos <- st_as_sf(principal,coords=c('x_utm','y_utm'),crs=EPSG,remove=FALSE)
+# Reemplaza el archivo generado en esta bitácora, nunca el GeoPackage original.
+f_cent <- file.path(DIR_TAB,'centroides_principal.gpkg')
+if (file.exists(f_cent)) file.remove(f_cent)
+st_write(puntos,f_cent,layer='centroides',quiet=TRUE)
+res_celda <- principal %>% mutate(cx=floor(x_utm/CELDA_M),cy=floor(y_utm/CELDA_M)) %>%
+  group_by(cx,cy) %>% summarise(n=n(),D50=median(b_mm),D84=as.numeric(quantile(b_mm,.84)),
+  b_media=mean(b_mm),ba_mediana=median(razon_ba,na.rm=TRUE),.groups='drop') %>%
+  mutate(x=(cx+.5)*CELDA_M,y=(cy+.5)*CELDA_M,
+         suficiente=n>=MIN_N_CELDA)
+guardar_csv(res_celda,'resumen_celdas_actualizado.csv')
+knitr::kable(res_celda %>% summarise(celdas=n(),celdas_suficientes=sum(suficiente),
+                                     mediana_n=median(n)),digits=1)
+```
+
+```{r mapa-D50}
+p_mapa <- ggplot(res_celda,aes(x,y))+
+  geom_tile(data=filter(res_celda,suficiente),aes(fill=D50),width=CELDA_M,height=CELDA_M)+
+  geom_tile(data=filter(res_celda,!suficiente),fill='grey90',color='grey75',
+            width=CELDA_M,height=CELDA_M)+
+  coord_equal()+scale_fill_viridis_c(option='viridis',na.value='grey90')+
+  labs(x='Este UTM 19N (m)',y='Norte UTM 19N (m)',fill='D50 (mm)',
+       title=paste0('D50 por celdas de ',CELDA_M,' m'),
+       subtitle=paste('Gris: menos de',MIN_N_CELDA,'clastos; no interpolar áreas ausentes'))+
+  theme_minimal()
+exportar(p_mapa,'07_mapa_D50',10,7)
+p_n <- ggplot(res_celda,aes(x,y,fill=n))+geom_tile(width=CELDA_M,height=CELDA_M)+
+  coord_equal()+scale_fill_viridis_c(trans='sqrt')+
+  labs(x='Este UTM 19N (m)',y='Norte UTM 19N (m)',fill='N clastos',
+       title='Intensidad de detección por celda')+theme_minimal()
+exportar(p_n,'08_mapa_recuento',10,7)
+```
+
+## 5.1. Heterogeneidad entre teselas
+
+La tesela no es una unidad sedimentaria independiente: existe solapamiento y la selección de clastos por núcleo central. Se usa aquí como **bloque operativo de remuestreo**, no como réplica independiente de campo.
+
+```{r teselas-resumen}
+res_tes <- principal %>% group_by(tesela) %>%
+  summarise(n=n(),D50=median(b_mm),D84=as.numeric(quantile(b_mm,.84)),
+            ba_mediana=median(razon_ba,na.rm=TRUE),.groups='drop') %>%
+  left_join(audit %>% select(tesela,segundos,semillas,mascaras),by='tesela')
+guardar_csv(res_tes,'resumen_teselas.csv')
+p_tes <- res_tes %>% filter(n>=MIN_N_TESELA) %>%
+  ggplot(aes(n,D50))+geom_point(alpha=.65)+geom_smooth(method='loess',se=FALSE)+
+  labs(x='Clastos conservados por tesela',y='D50 (mm)',
+       title='Variación granulométrica entre teselas')+theme_minimal()
+exportar(p_tes,'09_D50_teselas')
+```
+
+## 5.2. Incertidumbre exploratoria mediante remuestreo por teselas
+
+El intervalo siguiente mide la variación asociada al **subconjunto de teselas ya procesadas** bajo remuestreo por bloques. **No representa** incertidumbre de segmentación, precisión fotogramétrica ni un intervalo válido para toda la llanura no muestreada.
+
+```{r bootstrap}
+bloques <- split(principal$b_mm,principal$tesela)
+bloques <- bloques[lengths(bloques)>0]
+if (length(bloques)>=3) {
+  boot <- replicate(B_REP,{
+    ids <- sample(seq_along(bloques),length(bloques),replace=TRUE)
+    z <- unlist(bloques[ids],use.names=FALSE)
+    qseg(z,c(.5,.84))
+  })
+  ic <- tibble(metrica=c('D50','D84'),
+               estimacion=qseg(principal$b_mm,c(.5,.84)),
+               inf=apply(boot,1,quantile,probs=.025,na.rm=TRUE),
+               sup=apply(boot,1,quantile,probs=.975,na.rm=TRUE),
+               n_bloques=length(bloques))
+  knitr::kable(ic,digits=2)
+  guardar_csv(ic,'intervalos_bootstrap_teselas.csv')
+} else cat('Insuficientes teselas para bootstrap.\n')
+```
+
+# 6. Rendimiento de SegmentEveryGrain
+
+```{r rendimiento}
+rend <- audit %>% filter(estado=='completada')
+if (nrow(rend)) {
+  rend_res <- rend %>% summarise(teselas=n(),semillas=sum(semillas,na.rm=TRUE),
+    mascaras=sum(mascaras,na.rm=TRUE),clastos=sum(granos,na.rm=TRUE),
+    tiempo_h=sum(segundos,na.rm=TRUE)/3600,
+    mediana_s=median(segundos,na.rm=TRUE))
+  knitr::kable(rend_res,digits=2)
+  guardar_csv(rend_res,'rendimiento_resumen.csv')
+  p_rend <- ggplot(rend,aes(semillas,granos))+geom_point(alpha=.6)+
+    labs(x='Semillas propuestas',y='Clastos conservados',
+         title='Rendimiento de segmentación por tesela')+theme_minimal()
+  exportar(p_rend,'10_rendimiento_segmentacion')
+}
+```
+
+La cantidad de semillas no equivale al número de granos detectados. Tampoco es una medida de exactitud: faltan etiquetas de referencia para estimar precisión y exhaustividad.
+
+# 7. Auditoría geométrica de máscaras y valores extremos
+
+```{r extremos}
+extremos <- principal %>% arrange(desc(a_mm)) %>%
+  select(id_grano,tesela,a_mm,b_mm,area_mm2,razon_ba,toca_borde,x_utm,y_utm) %>% head(30)
+guardar_csv(extremos,'30_mayores_clastos_revisar.csv')
+knitr::kable(head(extremos,10),digits=2)
+# Control geométrico adicional: objetos con circularidad fuera del rango teórico
+# pueden revelar geometrías degeneradas o errores numéricos.
+alertas <- datos %>% mutate(alerta=case_when(
+  !qc_valida ~ 'geometria_invalida',
+  !is.finite(circularidad) | circularidad<=0 | circularidad>1.02 ~ 'circularidad_anomala',
+  a_mm>quantile(principal$a_mm,.995,na.rm=TRUE) ~ 'eje_mayor_extremo',
+  TRUE ~ 'sin_alerta'))
+guardar_csv(alertas %>% filter(alerta!='sin_alerta'), 'objetos_revisar.csv')
+```
+
+Estas alertas son **candidatos para inspección visual**, no errores confirmados. No se eliminan clastos grandes automáticamente.
+
+# 8. Validación de campo de 2019 (pendiente de correspondencias)
+
+Cuando dispongamos de la tabla de clastos medidos manualmente, preparar un CSV llamado `validacion_campo_2019.csv` con columnas `id_grano`, `a_campo_mm`, `b_campo_mm`. La correspondencia debe establecerse mediante identificación visual o espacial; **no** emparejar por orden de filas ni por vecino más próximo sin verificar.
+
+```{r validacion}
+f_valid <- 'datos/validacion_campo_2019.csv'
+if (file.exists(f_valid)) {
+  campo <- readr::read_csv(f_valid,show_col_types=FALSE)
+  req <- c('id_grano','a_campo_mm','b_campo_mm')
+  if (!all(req %in% names(campo))) stop('Faltan columnas en validación: ',paste(setdiff(req,names(campo)),collapse=', '))
+  pares <- inner_join(campo,principal,by='id_grano') %>%
+    mutate(error_b=b_mm-b_campo_mm,error_a=a_mm-a_campo_mm)
+  if (nrow(pares)>=3) {
+    met <- pares %>% summarise(n=n(),sesgo_b=mean(error_b),MAE_b=mean(abs(error_b)),
+       RMSE_b=sqrt(mean(error_b^2)),sesgo_a=mean(error_a),
+       MAE_a=mean(abs(error_a)),RMSE_a=sqrt(mean(error_a^2)))
+    knitr::kable(met,digits=2)
+    guardar_csv(met,'validacion_metrica.csv')
+    p_val <- ggplot(pares,aes(b_campo_mm,b_mm))+geom_point()+
+      geom_abline(slope=1,intercept=0,linetype='dashed')+
+      coord_equal()+labs(x='Dimensión de campo b (mm)',y='Eje menor proyectado (mm)',
+                         title='Comparación pareada, definiciones a verificar')+theme_minimal()
+    exportar(p_val,'11_validacion_campo')
+  } else cat('Pocas correspondencias válidas para evaluación.\n')
+} else cat('Validación pendiente: falta ',f_valid,'\n')
+```
+
+**Antes de interpretar los errores**, verificar que las dimensiones comparadas sean homólogas. El eje `a` tridimensional puede no ser observable completo desde una ortofoto; la geometría de elipse equivalente tampoco es el diámetro máximo de Feret.
+
+# 9. Polígonos y productos cartográficos para QGIS
+
+El GeoPackage integral se lee en la sección 2. Aquí se verifican nuevamente sus metadatos, sin reescribir el original.
+
+```{r gpkg-verificacion}
+f_pol <- GPKG
+if (file.exists(f_pol)) {
+  capas <- sf::st_layers(f_pol)
+  print(capas)
+  # Lectura espacial opcional (puede tardar):
+  # pol <- sf::st_read(f_pol,quiet=TRUE)
+  # stopifnot(sf::st_crs(pol)$epsg == EPSG)
+  cat('Atención: si se añadieron teselas después de generar este GeoPackage,\n',
+      'puede estar desactualizado. Reexportar o unir GeoJSON por tesela.\n')
+} else cat('GeoPackage de polígonos no disponible localmente.\n')
+```
+
+# 10. Texto y tabla para la comunicación oral
+
+```{r resumen-presentacion}
+resumen <- paste0(
+  'Se analizaron ',format(nrow(principal),big.mark='.',trim=TRUE),
+  ' clastos segmentados y georreferenciados en ',
+  n_distinct(principal$tesela),' teselas con mediciones. ',
+  'El eje menor proyectado presentó D50=',round(median(principal$b_mm),1),
+  ' mm y D84=',round(quantile(principal$b_mm,.84),1),
+  ' mm (distribución por número de clastos). ',
+  'La mediana de b/a fue ',round(median(principal$razon_ba,na.rm=TRUE),3),'. ',
+  'La completitud de la segmentación debe verificarse con la auditoría; la validación frente a las ',
+  'mediciones manuales de 2019 está pendiente. ',
+  'Los percentiles no equivalen a una distribución por masa.')
+cat(resumen,'\n')
+writeLines(resumen,file.path(DIR_TAB,'resumen_para_presentacion.txt'))
+cat('\nFiguras exportadas a: ',normalizePath(FIG),'\n')
+```
+
+# 11. Próximos pasos metodológicos
+
+1. Verificar el cierre de la segmentación mediante los estados de `registro.json`.
+2. Auditar solapamientos y posibles duplicados entre teselas antes de considerar el inventario definitivo.
+3. Inspeccionar visualmente clastos extremos, fusiones y falsos negativos en una muestra estratificada por tamaño y posición.
+4. Digitalizar o recuperar mediciones de 2019, emparejar clastos y cuantificar error, sesgo y concordancia.
+5. Delimitar unidades geomorfológicas o transectos (cauce–barra–llanura) **antes** de atribuir los gradientes espaciales a procesos fluviales.
+6. Para la presentación `index.qmd`, enlazar directamente las figuras PNG/PDF exportadas a `figuras/`.
+
+# 12. Información de sesión y reproducibilidad
+
+```{r session}
+print(sessionInfo())
+```

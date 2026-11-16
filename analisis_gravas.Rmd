@@ -1,0 +1,553 @@
+---
+title: "Río Mana: granulometría superficial mediante SfM y SegmentEveryGrain"
+subtitle: "Bitácora reproducible — inventario reconstruido, morfometría, variabilidad espacial y validación de campo"
+author: "Equipo de investigación"
+date: "`r format(Sys.Date(), '%d/%m/%Y')`"
+output:
+  html_document:
+    toc: true
+    toc_depth: 3
+    number_sections: true
+    df_print: paged
+---
+
+```{r configuracion, include=FALSE}
+knitr::opts_chunk$set(echo=TRUE, message=FALSE, warning=FALSE,
+                      fig.width=10, fig.height=6, dpi=160,
+                      fig.path='resultados/analisis_gravas_seguro/figuras/knitr_')
+options(scipen=999, digits=4)
+paquetes <- c('dplyr','tidyr','readr','purrr','stringr','ggplot2',
+              'sf','tibble','scales','knitr')
+faltan <- paquetes[!vapply(paquetes, requireNamespace, logical(1), quietly=TRUE)]
+if (length(faltan)) stop('Instale paquetes: ',paste(faltan,collapse=', '))
+invisible(lapply(paquetes, library, character.only=TRUE))
+BASE <- 'resultados/resultados_completo'
+GPKG <- file.path(BASE,'granos_mana_final.gpkg')
+TRAZA <- file.path(BASE,'granos_mana_trazabilidad.csv')
+FIG <- 'resultados/analisis_gravas_seguro/figuras'
+DIR_TAB <- 'resultados/analisis_gravas_seguro/tablas'
+PRESENTACION <- 'resultados/analisis_gravas_seguro/presentacion'
+for (d in c(FIG,DIR_TAB,PRESENTACION))
+  dir.create(d,recursive=TRUE,showWarnings=FALSE)
+EPSG <- 32619
+CELDA_M <- 1
+MIN_N_CELDA <- 30L
+MIN_N_TESELA <- 20L
+B_REP <- 300L
+set.seed(2026)
+tema <- theme_minimal(base_size=13)
+exportar <- function(p,nombre,ancho=10,alto=6) {
+  for (d in c(FIG,PRESENTACION)) {
+    ggplot2::ggsave(file.path(d,paste0(nombre,'.png')),p,
+                    width=ancho,height=alto,dpi=250,bg='white')
+    ggplot2::ggsave(file.path(d,paste0(nombre,'.pdf')),p,
+                    width=ancho,height=alto,bg='white')
+  }
+  print(p)
+}
+guardar_csv <- function(x,nombre) {
+  readr::write_csv(x,file.path(DIR_TAB,nombre))
+  readr::write_csv(x,file.path(PRESENTACION,nombre))
+}
+qseg <- function(x,probs=c(.1,.16,.5,.84,.9)) {
+  x <- x[is.finite(x) & x>0]
+  if (!length(x)) return(rep(NA_real_,length(probs)))
+  as.numeric(stats::quantile(x,probs=probs,names=FALSE))
+}
+```
+
+# Alcance y decisiones metodológicas
+
+Este cuaderno analiza **el inventario final de clastos reconstruidos**. El archivo
+`granos_mana_final.gpkg` procede del script independiente
+`fusion_SEG_inventario_final_corregido.R`, que ya ejecutó las fusiones manuales,
+reparó geometrías puntuales, vinculó los puntos de campo y recalculó los ejes
+completos de una **elipse equivalente por momentos de área**. **Aquí no se
+repite ninguna fusión ni se recalculan los ejes**: se leen los resultados
+validados del proceso anterior. El GeoPackage original permanece intacto.
+
+No se excluyen clastos por el campo `toca_borde`: la posición en la tesela no
+es un criterio de exclusión. Los percentiles corresponden a **frecuencias por
+número de clastos**, no a porcentajes de masa. Los ejes de elipse equivalente
+son medidas bidimensionales y no son necesariamente idénticos a las medidas
+sedimentológicas tomadas manualmente.
+
+# 1. Lectura del inventario definitivo y control de calidad
+
+```{r lectura-inventario}
+if (!file.exists(GPKG)) stop('No existe ',GPKG,
+  '. Ejecute primero el script de reconstrucción desde la raíz del proyecto.')
+capas <- sf::st_layers(GPKG)$name
+if (!'inventario_final' %in% capas)
+  stop('Falta la capa inventario_final en ',GPKG)
+poligonos <- sf::st_read(GPKG,layer='inventario_final',quiet=TRUE)
+if (sf::st_crs(poligonos)$epsg != EPSG)
+  stop('CRS inesperado; se requiere EPSG:',EPSG)
+requeridas <- c('uid_final','n_fragmentos','a_seg_mm','b_seg_mm',
+               'area_seg_m2','perimetro_seg_m','razon_ba_seg',
+               'id_campo','a_campo_mm','b_campo_mm')
+faltantes <- setdiff(requeridas,names(poligonos))
+if (length(faltantes)) stop('Faltan campos: ',paste(faltantes,collapse=', '))
+if (anyDuplicated(poligonos$uid_final)) stop('uid_final duplicado')
+if (any(sf::st_is_empty(poligonos))) stop('Inventario final contiene geometrías vacías')
+if (any(!sf::st_is_valid(poligonos))) stop('Inventario final contiene geometrías inválidas')
+# Punto interior garantizado para representación; no modifica las geometrías.
+centros <- suppressWarnings(sf::st_coordinates(sf::st_point_on_surface(poligonos)))
+datos <- sf::st_drop_geometry(poligonos) %>%
+  mutate(x_utm=centros[,1],y_utm=centros[,2],
+         a_mm=as.numeric(a_seg_mm),b_mm=as.numeric(b_seg_mm),
+         area_mm2=as.numeric(area_seg_m2)*1e6,
+         perimetro_mm=as.numeric(perimetro_seg_m)*1000,
+         razon_ba=as.numeric(razon_ba_seg),
+         circularidad=4*pi*as.numeric(area_seg_m2)/
+           (as.numeric(perimetro_seg_m)^2),
+         qc_valida=is.finite(a_mm)&is.finite(b_mm)&
+           is.finite(area_mm2)&a_mm>=b_mm&b_mm>0&area_mm2>0)
+principal <- datos %>% filter(qc_valida)
+if (!nrow(principal)) stop('No hay clastos con dimensiones válidas')
+qc <- tibble(indicador=c('Clastos finales','Dimensiones válidas',
+                         'Clastos fusionados','Clastos individuales',
+                         'Clastos vinculados a campo'),
+             n=c(nrow(datos),nrow(principal),
+                 sum(datos$n_fragmentos>1,na.rm=TRUE),
+                 sum(datos$n_fragmentos==1,na.rm=TRUE),
+                 sum(!is.na(datos$id_campo))))
+knitr::kable(qc)
+guardar_csv(qc,'control_calidad_final.csv')
+```
+
+El inventario contiene **`r format(nrow(datos),big.mark='.',trim=TRUE)` clastos**,
+de los que **`r sum(datos$n_fragmentos>1)`** proceden de la unión de varios
+fragmentos SEG. No se ha filtrado por bordes de tesela.
+
+## 1.1. Trazabilidad de las fusiones
+
+```{r trazabilidad}
+if (file.exists(TRAZA)) {
+  traza <- readr::read_csv(TRAZA,show_col_types=FALSE)
+  resumen_traza <- tibble(
+    poligonos_seg_originales=nrow(traza),
+    clastos_finales=n_distinct(traza$uid_final),
+    reduccion=nrow(traza)-n_distinct(traza$uid_final))
+  knitr::kable(resumen_traza)
+  guardar_csv(resumen_traza,'resumen_reconstruccion.csv')
+} else {
+  cat('No se encontró el CSV de trazabilidad; se omite esta auditoría.\n')
+}
+```
+
+# 2. Distribución granulométrica superficial
+
+```{r percentiles}
+cuantiles <- function(d,etiqueta='Inventario final') {
+  qs <- qseg(d$b_mm)
+  tibble(conjunto=etiqueta,n=nrow(d),D10=qs[1],D16=qs[2],
+         D50=qs[3],D84=qs[4],D90=qs[5],
+         sorting_ratio=qs[4]/qs[2],
+         sorting_geometrico=sqrt(qs[4]/qs[2]))
+}
+resumen_q <- cuantiles(principal)
+knitr::kable(resumen_q,digits=2)
+guardar_csv(resumen_q,'percentiles_conteo_final.csv')
+resumen_inventario <- principal %>% summarise(
+  n_clastos=n(),n_fusionados=sum(n_fragmentos>1),
+  a_mediana_mm=median(a_mm),b_mediana_mm=median(b_mm),
+  a_media_mm=mean(a_mm),b_media_mm=mean(b_mm),
+  a_p95_mm=unname(quantile(a_mm,.95)),
+  b_p95_mm=unname(quantile(b_mm,.95)),
+  relacion_ba_mediana=median(razon_ba))
+knitr::kable(resumen_inventario,digits=2)
+guardar_csv(resumen_inventario,'resumen_inventario.csv')
+```
+
+La mediana del eje menor es **`r round(resumen_q$D50,2)` mm** y el
+percentil D84 es **`r round(resumen_q$D84,2)` mm**. Estas magnitudes
+corresponden al eje menor de la elipse equivalente, por número de clastos.
+
+```{r distribucion}
+p_hist <- ggplot(principal,aes(b_mm))+
+  geom_histogram(bins=65,fill='#4477AA',color='white')+
+  scale_x_log10(labels=scales::label_number())+
+  labs(x='Eje menor b (mm; escala logarítmica)',y='Número de clastos',
+       title='Distribución granulométrica superficial por conteo')+tema
+exportar(p_hist,'02_histograma_b_log')
+p_cum <- ggplot(principal,aes(b_mm))+
+  stat_ecdf(geom='step',linewidth=.9,color='#225EA8')+
+  scale_x_log10(labels=scales::label_number())+
+  scale_y_continuous(labels=scales::label_percent())+
+  geom_hline(yintercept=c(.1,.16,.5,.84,.9),linetype='dotted',color='grey65')+
+  labs(x='Eje menor b (mm; escala logarítmica)',
+       y='Porcentaje acumulado de clastos',
+       title='Distribución acumulada por número de clastos')+tema
+exportar(p_cum,'03_curva_acumulada')
+```
+
+## 2.1. Sensibilidad al umbral inferior de tamaño
+
+El análisis siguiente examina el efecto de imponer distintos umbrales de
+inclusión. **No evalúa bordes** y **no estima eficiencia de detección**.
+
+```{r sensibilidad}
+umbrales <- c(10,15,20,25)
+sens <- purrr::map_dfr(umbrales,function(u) {
+  cuantiles(principal %>% filter(b_mm>=u)) %>%
+    mutate(umbral_mm=u)
+})
+knitr::kable(sens,digits=2)
+guardar_csv(sens,'sensibilidad_umbral_tamano.csv')
+p_sens <- ggplot(sens,aes(umbral_mm,D50))+
+  geom_line(color='#2B8CBE',linewidth=1)+
+  geom_point(color='#2B8CBE',size=2.5)+
+  labs(x='Umbral inferior de b (mm)',y='D50 de clastos incluidos (mm)',
+       title='Sensibilidad del D50 al truncamiento inferior')+tema
+exportar(p_sens,'04_sensibilidad_D50')
+```
+
+# 3. Morfometría proyectada
+
+```{r morfometria}
+forma <- principal %>% summarise(
+  n=n(),a_mediana_mm=median(a_mm),b_mediana_mm=median(b_mm),
+  razon_ba_mediana=median(razon_ba),
+  circularidad_mediana=median(circularidad[is.finite(circularidad)]),
+  spearman_tamano_forma=cor(b_mm,razon_ba,method='spearman'))
+knitr::kable(forma,digits=3)
+guardar_csv(forma,'morfometria_resumen.csv')
+# Recupera el gráfico de densidad coloreado del cuaderno original.
+p_ab <- ggplot(principal,aes(a_mm,b_mm))+
+  geom_bin2d(bins=65)+
+  scale_fill_viridis_c(trans='log10')+
+  geom_abline(slope=1,intercept=0,linetype='dashed',color='white')+
+  coord_equal()+
+  labs(x='Eje mayor a (mm)',y='Eje menor b (mm)',
+       title='Relación entre dimensiones de clastos',
+       subtitle='Densidad bidimensional; elipses equivalentes por momentos',
+       fill='N clastos')+tema
+exportar(p_ab,'05_relacion_ejes',10,7)
+# geom_bin2d no requiere el paquete adicional hexbin.
+p_forma <- ggplot(principal %>%
+                     filter(is.finite(razon_ba),razon_ba>0,razon_ba<=1),
+                   aes(b_mm,razon_ba))+
+  geom_bin2d(bins=60)+
+  scale_fill_viridis_c(trans='log10')+
+  scale_x_log10()+
+  labs(x='Eje menor b (mm; escala logarítmica)',
+       y='Relación b/a',fill='N clastos',
+       title='Tamaño y elongación proyectada')+tema
+exportar(p_forma,'06_tamano_elongacion')
+```
+
+El cociente b/a representa elongación bidimensional; no mide esfericidad
+tridimensional. La circularidad depende de la irregularidad del contorno.
+
+# 4. Distribución espacial y heterogeneidad
+
+Los mapas emplean coordenadas EPSG:32619 y una cuadrícula UTM fija. Las
+posiciones corresponden a puntos interiores de las geometrías reconstruidas.
+Los valores por celda se calculan únicamente con clastos presentes; no se
+interpolan zonas sin detecciones.
+
+```{r centroides-malla}
+puntos_finales <- sf::st_as_sf(principal,coords=c('x_utm','y_utm'),
+                              crs=EPSG,remove=FALSE)
+f_cent <- file.path(DIR_TAB,'centroides_finales.gpkg')
+if (!file.exists(f_cent)) {
+  sf::st_write(puntos_finales,f_cent,layer='centroides',quiet=TRUE)
+} else {
+  message('Se conserva el GeoPackage de centroides existente: ',f_cent)
+}
+res_celda <- principal %>%
+  mutate(cx=floor(x_utm/CELDA_M),cy=floor(y_utm/CELDA_M)) %>%
+  group_by(cx,cy) %>%
+  summarise(n=n(),D50=median(b_mm),
+            D84=unname(quantile(b_mm,.84)),
+            b_media=mean(b_mm),ba_mediana=median(razon_ba),
+            .groups='drop') %>%
+  mutate(x=(cx+.5)*CELDA_M,y=(cy+.5)*CELDA_M,
+         suficiente=n>=MIN_N_CELDA)
+guardar_csv(res_celda,'resumen_celdas_final.csv')
+knitr::kable(res_celda %>% summarise(
+  celdas=n(),celdas_suficientes=sum(suficiente),
+  mediana_clastos_celda=median(n)))
+```
+
+```{r mapas}
+p_mapa <- ggplot(res_celda,aes(x,y))+
+  geom_tile(data=filter(res_celda,suficiente),aes(fill=D50),
+            width=CELDA_M,height=CELDA_M)+
+  geom_tile(data=filter(res_celda,!suficiente),
+            fill='grey90',color='grey75',
+            width=CELDA_M,height=CELDA_M)+
+  coord_equal()+scale_fill_viridis_c(na.value='grey90')+
+  labs(x='Este UTM 19N (m)',y='Norte UTM 19N (m)',fill='D50 (mm)',
+       title=paste0('D50 por celdas de ',CELDA_M,' m'),
+       subtitle=paste('Gris: menos de',MIN_N_CELDA,'clastos'))+tema
+exportar(p_mapa,'07_mapa_D50',10,7)
+p_n <- ggplot(res_celda,aes(x,y,fill=n))+
+  geom_tile(width=CELDA_M,height=CELDA_M)+
+  coord_equal()+scale_fill_viridis_c(trans='sqrt')+
+  labs(x='Este UTM 19N (m)',y='Norte UTM 19N (m)',fill='N clastos',
+       title='Número de clastos por celda')+tema
+exportar(p_n,'08_mapa_recuento',10,7)
+```
+
+## 4.1. Variación entre teselas (descriptiva)
+
+Para clastos fusionados, `tesela` es el atributo heredado de un fragmento;
+por ello, este agrupamiento es **operativo** y no representa necesariamente
+la distribución exacta de cada clasto entre teselas.
+
+```{r teselas-resumen}
+if ('tesela' %in% names(principal)) {
+  res_tes <- principal %>% filter(!is.na(tesela)) %>%
+    group_by(tesela) %>%
+    summarise(n=n(),D50=median(b_mm),
+              D84=unname(quantile(b_mm,.84)),
+              ba_mediana=median(razon_ba),.groups='drop')
+  guardar_csv(res_tes,'resumen_teselas_final.csv')
+  p_tes <- res_tes %>% filter(n>=MIN_N_TESELA) %>%
+    ggplot(aes(n,D50))+geom_point(alpha=.65,color='#2B8CBE')+
+    labs(x='Clastos asignados a la tesela',y='D50 (mm)',
+         title='Variación granulométrica entre teselas')+tema
+  exportar(p_tes,'09_D50_teselas')
+} else cat('No hay atributo tesela; se omite este análisis.\n')
+```
+
+## 4.2. Remuestreo exploratorio por teselas
+
+Los intervalos reflejan variación entre bloques operativos, **no** exactitud
+de segmentación ni incertidumbre para toda la llanura.
+
+```{r bootstrap}
+if ('tesela' %in% names(principal)) {
+  bloques <- split(principal$b_mm,principal$tesela)
+  bloques <- bloques[lengths(bloques)>0]
+  if (length(bloques)>=3) {
+    boot <- replicate(B_REP,{
+      ids <- sample(seq_along(bloques),length(bloques),replace=TRUE)
+      qseg(unlist(bloques[ids],use.names=FALSE),c(.5,.84))
+    })
+    ic <- tibble(metrica=c('D50','D84'),
+      estimacion=qseg(principal$b_mm,c(.5,.84)),
+      inf=apply(boot,1,quantile,probs=.025,na.rm=TRUE),
+      sup=apply(boot,1,quantile,probs=.975,na.rm=TRUE),
+      n_bloques=length(bloques))
+    knitr::kable(ic,digits=2)
+    guardar_csv(ic,'intervalos_bootstrap_teselas.csv')
+  } else cat('No hay suficientes teselas para remuestreo.\n')
+}
+```
+
+# 5. Validación de campo frente a SegmentEveryGrain
+
+La vinculación de campo ya se realizó espacialmente **después de fusionar**
+las geometrías. Se comparan por separado los ejes mayores y menores. Una
+correlación alta indica asociación lineal, pero **no basta para demostrar
+concordancia**; se informan además sesgo, MAE, RMSE y MAPE.
+
+```{r validacion-datos}
+val <- principal %>% filter(!is.na(id_campo),
+  is.finite(a_campo_mm),is.finite(b_campo_mm),
+  a_campo_mm>0,b_campo_mm>0)
+if (nrow(val)<3) stop('Menos de tres pares de campo válidos')
+comparacion <- dplyr::bind_rows(
+  val %>% transmute(id_campo,eje='a',
+                    campo_mm=a_campo_mm,seg_mm=a_mm),
+  val %>% transmute(id_campo,eje='b',
+                    campo_mm=b_campo_mm,seg_mm=b_mm)) %>%
+  mutate(error_mm=seg_mm-campo_mm,
+         error_abs_mm=abs(error_mm),
+         error_pct=100*error_mm/campo_mm,
+         media_par=(seg_mm+campo_mm)/2)
+resumen_validacion <- comparacion %>% group_by(eje) %>%
+  summarise(n=n(),sesgo_mm=mean(error_mm),
+    MAE_mm=mean(error_abs_mm),RMSE_mm=sqrt(mean(error_mm^2)),
+    MAPE_pct=mean(abs(error_pct)),
+    correlacion=cor(campo_mm,seg_mm),
+    r2=correlacion^2,
+    .groups='drop')
+knitr::kable(resumen_validacion,digits=3)
+guardar_csv(resumen_validacion,'resumen_validacion.csv')
+guardar_csv(comparacion,'pares_validacion.csv')
+```
+
+Se emparejaron **`r nrow(val)` clastos**. La correlación de Pearson fue
+**`r sprintf('%.3f',resumen_validacion$correlacion[resumen_validacion$eje=='a'])`**
+para el eje mayor y
+**`r sprintf('%.3f',resumen_validacion$correlacion[resumen_validacion$eje=='b'])`**
+para el eje menor. La diferencia media SEG–campo fue de
+**`r round(resumen_validacion$sesgo_mm[resumen_validacion$eje=='a'],2)` mm**
+para `a` y
+**`r round(resumen_validacion$sesgo_mm[resumen_validacion$eje=='b'],2)` mm**
+para `b`.
+
+```{r validacion-correlacion}
+# Estadísticos calculados por eje, directamente de los pares validados.
+# R² es el coeficiente de determinación de una regresión OLS con intercepto.
+estadisticas_cor <- comparacion %>%
+  group_by(eje) %>%
+  summarise(
+    n=n(),
+    r=cor(campo_mm,seg_mm),
+    r2=r^2,
+    pendiente=unname(coef(lm(seg_mm~campo_mm))[2]),
+    intercepto=unname(coef(lm(seg_mm~campo_mm))[1]),
+    .groups='drop'
+  ) %>%
+  mutate(
+    etiqueta=sprintf(
+      'n = %d\nr = %.4f\nR² = %.4f\nSEG = %.3f + %.3f × campo',
+      n,r,r2,intercepto,pendiente
+    )
+  )
+knitr::kable(estadisticas_cor,digits=4)
+guardar_csv(estadisticas_cor,'estadisticas_correlacion.csv')
+
+p_val <- ggplot(comparacion,aes(campo_mm,seg_mm))+
+  geom_point(color='#4477AA',alpha=.75,size=2.2)+
+  geom_abline(slope=1,intercept=0,linetype='dashed',color='#D7301F')+
+  geom_label(data=estadisticas_cor,
+             aes(x=-Inf,y=Inf,label=etiqueta),
+             inherit.aes=FALSE,hjust=-.08,vjust=1.08,
+             size=3.5,label.size=.2,fill='white',alpha=.92)+
+  facet_wrap(~eje,scales='fixed')+coord_equal()+
+  labs(x='Medición de campo (mm)',y='Elipse equivalente SEG (mm)',
+       title='Validación dimensional: campo frente a SEG',
+       subtitle='Línea roja discontinua: concordancia perfecta')+tema
+exportar(p_val,'11_validacion_campo_SEG',11,7)
+
+p_cor <- ggplot(comparacion,aes(campo_mm,seg_mm))+
+  geom_point(color='#225EA8',alpha=.7,size=2.1)+
+  geom_smooth(method='lm',formula=y~x,se=TRUE,color='#E6550D')+
+  geom_abline(slope=1,intercept=0,linetype='dashed',color='grey50')+
+  geom_label(data=estadisticas_cor,
+             aes(x=-Inf,y=Inf,label=etiqueta),
+             inherit.aes=FALSE,hjust=-.08,vjust=1.08,
+             size=3.5,label.size=.2,fill='white',alpha=.92)+
+  facet_wrap(~eje,scales='fixed')+coord_equal()+
+  labs(x='Campo (mm)',y='SEG (mm)',
+       title='Asociación lineal entre medidas de campo y SEG',
+       subtitle='Naranja: regresión OLS; gris: línea 1:1')+tema
+exportar(p_cor,'12_correlacion_campo_SEG',11,7)
+```
+
+## 5.1. Diferencias y concordancia (Bland–Altman)
+
+Los límites ±1,96 DE son descriptivos y dependen de los supuestos habituales
+del método; no sustituyen la inspección de valores atípicos ni la evaluación
+de sesgo proporcional.
+
+```{r bland-altman}
+limites <- comparacion %>% group_by(eje) %>%
+  summarise(sesgo=mean(error_mm),de=sd(error_mm),
+            inferior=sesgo-1.96*de,superior=sesgo+1.96*de,
+            .groups='drop')
+knitr::kable(limites,digits=2)
+guardar_csv(limites,'limites_concordancia.csv')
+p_ba <- ggplot(comparacion,aes(media_par,error_mm))+
+  geom_point(color='#4477AA',alpha=.7,size=2)+
+  geom_hline(data=limites,aes(yintercept=sesgo),color='#D7301F')+
+  geom_hline(data=limites,aes(yintercept=inferior),
+             color='#D7301F',linetype='dashed')+
+  geom_hline(data=limites,aes(yintercept=superior),
+             color='#D7301F',linetype='dashed')+
+  facet_wrap(~eje,scales='free')+
+  labs(x='Media campo–SEG (mm)',y='SEG menos campo (mm)',
+       title='Diferencias entre mediciones: Bland–Altman',
+       subtitle='Línea continua: sesgo; discontinuas: sesgo ± 1,96 DE')+tema
+exportar(p_ba,'13_bland_altman',10,6)
+```
+
+## 5.2. Errores porcentuales por eje
+
+```{r error-porcentual}
+# Media aritmética del error firmado (SEG - campo), por eje.
+medias_error <- comparacion %>%
+  group_by(eje) %>%
+  summarise(media_pct=mean(error_pct),n=n(),.groups='drop') %>%
+  mutate(etiqueta=sprintf('Media = %+.2f%%\nn = %d',media_pct,n))
+knitr::kable(medias_error,digits=2)
+guardar_csv(medias_error,'medias_error_porcentual.csv')
+
+p_error <- ggplot(comparacion,aes(eje,error_pct,fill=eje))+
+  geom_violin(trim=FALSE,alpha=.65,width=.75,color='grey35')+
+  geom_jitter(width=.09,height=0,alpha=.35,size=1.5,
+              color='grey25',show.legend=FALSE)+
+  geom_point(data=medias_error,aes(x=eje,y=media_pct),
+             inherit.aes=FALSE,shape=23,size=4,
+             fill='#D7301F',color='black')+
+  geom_label(data=medias_error,
+             aes(x=eje,y=media_pct,label=etiqueta),
+             inherit.aes=FALSE,nudge_x=.24,hjust=0,
+             vjust=-.4,size=3.7,fill='white',label.size=.2)+
+  geom_hline(yintercept=0,linetype='dashed')+
+  scale_fill_brewer(palette='Set2',guide='none')+
+  scale_x_discrete(expand=expansion(add=c(.45,.9)))+
+  labs(x='Eje',y='Error relativo SEG - campo (%)',
+       title='Distribución de errores porcentuales',
+       subtitle='Violín: distribución; rombo rojo: media; puntos: observaciones')+
+  tema
+exportar(p_error,'14_error_porcentual',10,7)
+```
+
+# 6. Auditoría de valores extremos
+
+```{r extremos}
+cols <- intersect(c('uid_final','id_grano','tesela','a_mm','b_mm',
+                    'area_mm2','razon_ba','n_fragmentos','x_utm','y_utm'),
+                  names(principal))
+extremos <- principal %>% arrange(desc(a_mm)) %>%
+  select(all_of(cols)) %>% head(30)
+knitr::kable(head(extremos,10),digits=2)
+guardar_csv(extremos,'30_mayores_clastos_revisar.csv')
+alertas <- principal %>% mutate(alerta=case_when(
+  !is.finite(circularidad)|circularidad<=0|circularidad>1.02 ~
+    'circularidad_anomala',
+  a_mm>unname(quantile(principal$a_mm,.995)) ~ 'eje_mayor_extremo',
+  TRUE ~ 'sin_alerta'))
+guardar_csv(alertas %>% filter(alerta!='sin_alerta'),
+            'objetos_revisar.csv')
+```
+
+Las alertas señalan candidatos para revisión visual, no errores confirmados.
+
+# 7. Resumen para la presentación
+
+```{r resumen-presentacion}
+rv_a <- resumen_validacion %>% filter(eje=='a')
+rv_b <- resumen_validacion %>% filter(eje=='b')
+texto_presentacion <- sprintf(paste0(
+  'A partir del inventario reconstruido se analizaron %s clastos, ',
+  'de los cuales %s requirieron fusión de fragmentos. ',
+  'La mediana del eje menor fue %.2f mm y la mediana b/a fue %.3f. ',
+  'Se validaron %s clastos mediante mediciones de campo. ',
+  'Las correlaciones campo–SEG fueron r=%.3f (eje a) y r=%.3f ',
+  '(eje b), con MAE de %.2f y %.2f mm y MAPE de %.2f%% y %.2f%%, ',
+  'respectivamente. Las medidas SEG son ejes de elipses ',
+  'equivalentes proyectadas; las distribuciones son por conteo.'),
+  format(nrow(principal),big.mark='.',trim=TRUE),
+  format(sum(principal$n_fragmentos>1),big.mark='.',trim=TRUE),
+  median(principal$b_mm),median(principal$razon_ba),nrow(val),
+  rv_a$correlacion,rv_b$correlacion,
+  rv_a$MAE_mm,rv_b$MAE_mm,rv_a$MAPE_pct,rv_b$MAPE_pct)
+cat(texto_presentacion,'\n')
+writeLines(texto_presentacion,
+           file.path(DIR_TAB,'resumen_para_presentacion.txt'))
+writeLines(texto_presentacion,
+           file.path(PRESENTACION,'resumen_para_presentacion.txt'))
+```
+
+## Figuras principales para las diapositivas
+
+Las figuras `02_histograma_b_log`, `03_curva_acumulada`,
+`05_relacion_ejes`, `06_tamano_elongacion`, `07_mapa_D50`,
+`11_validacion_campo_SEG`, `12_correlacion_campo_SEG`, `14_error_porcentual` y
+`13_bland_altman` se guardan tanto en `figuras/` como en
+`resultados/presentacion/`, en PNG de 250 dpi y PDF vectorial.
+Las tablas se guardan en `tablas/` y `resultados/presentacion/`.
+
+# 8. Información de sesión
+
+```{r sesion}
+print(sessionInfo())
+```

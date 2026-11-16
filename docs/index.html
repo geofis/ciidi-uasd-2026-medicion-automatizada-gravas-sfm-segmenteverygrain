@@ -12,7 +12,7 @@
 
   <meta name="author" content="José Ramón Martínez Batlle">
   <meta name="dcterms.date" content="2026-11-18">
-  <title>Detección automatizada de tramos costeros arenosos para el análisis multitemporal de playas de República Dominicana.</title>
+  <title>Medición automatizada del tamaño superficial de gravas en llanuras de inundación mediante fotogrametría SfM y SegmentEveryGrain</title>
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, minimal-ui">
@@ -344,7 +344,7 @@
     <div class="slides">
 
 <section id="title-slide" data-background-color="#075a7a" class="quarto-title-block center">
-  <h1 class="title">Detección automatizada de tramos costeros arenosos para el análisis multitemporal de playas de República Dominicana.</h1>
+  <h1 class="title">Medición automatizada del tamaño superficial de gravas en llanuras de inundación mediante fotogrametría SfM y SegmentEveryGrain</h1>
   <p class="subtitle">V Congreso Internacional de Investigación, Desarrollo e Innovación (I+D+I), UASD, 2026</p>
 
 <div class="quarto-title-authors">
@@ -353,646 +353,420 @@
 José Ramón Martínez Batlle 
 </div>
         <p class="quarto-title-affiliation">
-            </p><p>Universidad Autónoma de Santo Domingo · Facultad de Ciencias <br> <a href="https://geofis.github.io/ciidi-uasd-2026-deteccion-automatizada-tramos-costeros-arenosos/">Ver presentación en GitHub Pages: <br> https://geofis.github.io/ciidi-uasd-2026-deteccion-automatizada-tramos-costeros-arenosos/</a></p>
+            </p><p>Universidad Autónoma de Santo Domingo · Facultad de Ciencias <br> <a href="https://geofis.github.io/ciidi-uasd-2026-medicion-automatizada-gravas-sfm-segmenteverygrain/">Ver presentación en GitHub Pages: <br> https://geofis.github.io/ciidi-uasd-2026-medicion-automatizada-gravas-sfm-segmenteverygrain/</a></p>
           <p></p>
     </div>
 </div>
 
   <p class="date">2026-11-18</p>
 </section>
-<section id="dónde-están-las-playas-que-debemos-monitorear" class="slide level2">
-<h2>¿Dónde están las playas que debemos monitorear?</h2>
+<section id="podemos-medir-miles-de-gravas-sin-medirlas-una-por-una" class="slide level2">
+<h2>¿Podemos medir miles de gravas sin medirlas una por una?</h2>
 <div class="columns">
-<div class="column" style="width:56%;">
+<div class="column" style="width:55%;">
 <ul>
-<li>El análisis histórico del litoral necesita identificar <strong>tramos arenosos candidatos</strong>.</li>
-<li>Una selección manual nacional dificulta escalar y reproducir el procedimiento.</li>
-<li>Clasificar primero permite <strong>priorizar la extracción de líneas de costa con CoastSat</strong>.</li>
+<li>El tamaño superficial de los clastos ayuda a interpretar la dinámica fluvial y los depósitos de crecida.</li>
+<li>Las mediciones manuales son útiles, pero limitan la extensión y densidad del muestreo.</li>
+<li><strong>Propuesta:</strong> ortomosaicos UAV de resolución milimétrica + segmentación individual automatizada.</li>
 </ul>
-<p><strong>Pregunta:</strong> ¿podemos identificar automáticamente playas arenosas en el litoral dominicano?</p>
-</div><div class="column" style="width:44%;">
-<div class="quarto-figure quarto-figure-center">
-<figure>
-<p><img data-src="figuras/preparacion_qgis.jpg" class="quarto-figure quarto-figure-center" alt="Preparación de geometrías costeras en QGIS"></p>
-</figure>
-</div>
+</div><div class="column" style="width:45%;">
+<p><img data-src="figuras/dimensiones_clastos_depende_de_02.png" style="width:95.0%" alt="Dimensiones de los clastos"></p>
 </div></div>
 </section>
-<section id="objetivo-y-contribución" class="slide level2">
-<h2>Objetivo y contribución</h2>
-<p><strong>Desarrollar y aplicar un flujo reproducible de clasificación de coberturas costeras para identificar tramos arenosos candidatos a seguimiento multitemporal.</strong></p>
-<ul>
-<li>Construcción del ámbito litoral dominicano.</li>
-<li>Integración de <strong>22 predictores</strong> de teledetección y topografía.</li>
-<li>Entrenamiento y validación preliminar de <strong>U-Net</strong>.</li>
-<li>Inferencia en <strong>siete sectores costeros</strong>.</li>
-<li>Preparación de insumos para <strong>CoastSat</strong> y análisis de tendencias.</li>
-</ul>
+<section id="qué-medimos-ejes-y-granulometría-superficial" class="slide level2">
+<h2>Qué medimos: ejes y granulometría superficial</h2>
+
+<img data-src="figuras/dimensiones_clastos.png" class="quarto-figure quarto-figure-center r-stretch" style="width:75.0%"><div class="smaller">
+<p>La imagen permite estimar dimensiones <strong>proyectadas</strong> del clasto visible; no necesariamente el eje tridimensional intermedio de la clasificación granulométrica tradicional.</p>
+</div>
 </section>
-<section id="por-qué-clasificar-la-costa" class="slide level2">
-<h2>¿Por qué clasificar la costa?</h2>
+<section id="la-distribución-espacial-importa" class="slide level2">
+<h2>La distribución espacial importa</h2>
+
+<img data-src="figuras/dimensiones_clastos_distribucion_canal.png" class="quarto-figure quarto-figure-center r-stretch" style="width:85.0%"><div class="smaller">
+<p>La granulometría puede variar entre lecho, bancos y superficies de inundación. Figura histórica de la presentación de 2019, atribuida allí a Bunte (2001); verificar la referencia completa antes de publicar.</p>
+</div>
+</section>
+<section id="de-la-medición-manual-a-la-automatización" class="slide level2">
+<h2>De la medición manual a la automatización</h2>
 <div class="columns">
 <div class="column" style="width:50%;">
-<p><strong>Valor científico y operativo</strong></p>
-<ul>
-<li>Inventario reproducible de ambientes costeros.</li>
-<li>Priorización del monitoreo de playas.</li>
-<li>Identificación de sectores para revisión y trabajo de campo.</li>
-<li>Comparabilidad espacial del procedimiento.</li>
-</ul>
+<p><img data-src="figuras/medir_clastos_que_divertido.png" style="width:95.0%"></p>
 </div><div class="column" style="width:50%;">
-<p><strong>Aplicación principal</strong></p>
-<ol type="1">
-<li>Detectar playas arenosas.</li>
-<li>Seleccionar tramos candidatos.</li>
-<li>Ejecutar CoastSat.</li>
-<li>Estimar desplazamientos, erosión, acreción y estabilidad.</li>
-</ol>
-<p><strong>Advertencia:</strong> la clase playa no equivale automáticamente a una línea de costa extraíble.</p>
+<p><img data-src="figuras/medir_clastos_que_divertido_02.png" style="width:95.0%"></p>
 </div></div>
 </section>
-<section id="preparación-geométrica-en-qgis" class="slide level2">
-<h2>Preparación geométrica en QGIS</h2>
-
-<img data-src="figuras/preparacion_qgis.jpg" class="quarto-figure quarto-figure-center r-stretch" style="width:77.0%" alt="Imagen aportada del procesamiento en QGIS"><div class="smaller">
-<p>S2Coast2023 (fishnet poligonal) → unión y depuración multipartes/monopartes → unidades insulares ≳9 km² → conversión a polilíneas → cortes en desembocaduras de Dajabón y Pedernales → costa dominicana de La Española + Beata, Saona y Catalina.</p>
+<section id="objetivo" class="slide level2">
+<h2>Objetivo</h2>
+<p><strong>Evaluar la viabilidad y el desempeño dimensional de una tubería de segmentación y reconstrucción de clastos superficiales a partir de un ortomosaico SfM milimétrico y SegmentEveryGrain.</strong></p>
+<ul>
+<li>Recuperar las mediciones manuales de referencia de 2019.</li>
+<li>Segmentar clastos y estimar sus dimensiones proyectadas.</li>
+<li>Comparar las mediciones automatizadas con las de campo.</li>
+<li>Explorar patrones espaciales de tamaño y forma.</li>
+</ul>
+</section>
+<section id="área-de-estudio-río-mana" class="slide level2">
+<h2>Área de estudio: río Mana</h2>
+<div class="columns">
+<div class="column" style="width:50%;">
+<p><img data-src="figuras/qgis_contexto_isla.png" style="width:100.0%"></p>
+</div><div class="column" style="width:50%;">
+<p><img data-src="figuras/aoi_lejos.png" style="width:100.0%"></p>
+</div></div>
+<div class="smaller">
+<p>Banco lateral próximo a La Represa-El Cidral, Villa Altagracia, República Dominicana. Campaña de 2019; área de estudio aproximada: 10 × 15 m.</p>
 </div>
 </section>
-<section id="sectorización-del-corredor-litoral" class="slide level2">
-<h2>Sectorización del corredor litoral</h2>
-
-<img data-src="figuras/mosaico_clasificacion_nacional.png" class="quarto-figure quarto-figure-center r-stretch"><div class="smaller">
-<p>Cuadrícula de referencia de <strong>100 × 100 km</strong>, siete sectores; buffer de <strong>1 km</strong> a cada lado de la línea costera. Mosaico ilustrativo derivado de los rásteres clasificados (no sustituye una delimitación vectorial oficial).</p>
+<section id="adquisición-uav-y-procesamiento-sfm" class="slide level2">
+<h2>Adquisición UAV y procesamiento SfM</h2>
+<ul>
+<li><strong>Dos visitas:</strong> julio–septiembre de 2019.</li>
+<li>Vuelo preliminar con dron DJI Phantom 4 Pro, a <strong>10 m</strong> para evaluar escala y etiquetas (vuelo usado)</li>
+<li>Segunda visita: vuelos manuales a <strong>3 m</strong> y <strong>5 m</strong>, alrededor de las 10:00, sólo para pruebas.</li>
+<li>Vuelo bajo: <strong>~200 fotografías</strong>, GSD reportado <strong>0,8 mm</strong>.</li>
+<li>Procesamiento con <strong>OpenDroneMap</strong>: ortofoto, DSM y otros productos.</li>
+</ul>
+<div class="smaller">
+<p>Cifras recuperadas de la comunicación de 2019; pendientes de contraste con los metadatos y el informe ODM originales.</p>
 </div>
 </section>
-<section id="fuentes-y-22-predictores" class="slide level2">
-<h2>Fuentes y 22 predictores</h2>
+<section id="dimensiones-del-ortomosaico-verificación-de-metadatos" class="slide level2">
+<h2>Dimensiones del ortomosaico: verificación de metadatos</h2>
+<ul>
+<li><strong>Resolución espacial:</strong> 1 mm/píxel (ortomosaico original).</li>
+<li>Ortofoto de <strong>1 mm</strong>, 24571 filas x 19904 columnas (casi 500 millones de píxeles). 10 × 15 m</li>
+</ul>
+<div class="columns">
+<div class="column" style="width:50%;">
+<p><img data-src="figuras/aoi_medio.png" style="width:100.0%"></p>
+</div><div class="column" style="width:50%;">
+<p><img data-src="figuras/aoi_cerca.png" style="width:100.0%"></p>
+</div></div>
+</section>
+<section id="flujo-de-trabajo-fotogramétrico-original" class="slide level2">
+<h2>Flujo de trabajo fotogramétrico original</h2>
+
+<img data-src="figuras/flujo_trabajo_granulometria_con_uav_drone_01.png" class="quarto-figure quarto-figure-center r-stretch" style="width:77.0%"></section>
+<section id="preparación-y-rotulación-de-clastos" class="slide level2">
+<h2>Preparación y rotulación de clastos</h2>
+<div class="columns">
+<div class="column" style="width:48%;">
+<p><img data-src="figuras/rotular.png" style="width:100.0%"></p>
+</div><div class="column" style="width:52%;">
+<p><img data-src="figuras/flujo_trabajo_granulometria_con_uav_drone_02.png" style="width:100.0%"></p>
+</div></div>
+</section>
+<section id="de-las-fotografías-al-ortomosaico" class="slide level2">
+<h2>De las fotografías al ortomosaico</h2>
+
+<img data-src="figuras/flujo_trabajo_granulometria_con_uav_drone_03.png" class="quarto-figure quarto-figure-center r-stretch" style="width:82.0%"></section>
+<section id="validación-de-campo-mediciones-de-referencia" class="slide level2">
+<h2>Validación de campo: mediciones de referencia</h2>
+<ul>
+<li>Primera visita: <strong>100 clastos</strong> medidos como prueba exploratoria.</li>
+<li>Segunda visita: <strong>76 clastos</strong> medidos con cinta métrica.</li>
+<li>Se registraron códigos individuales y dimensiones <strong>a</strong> y <strong>b</strong>.</li>
+<li>Los registros de campo se organizaron mediante <strong>ODK</strong>.</li>
+</ul>
+<p><strong>Resultado actual:</strong> 73 clastos de la segunda campaña quedaron vinculados inequívocamente al inventario final.</p>
+</section>
+<section id="antecedente-segmentación-semiautomática-2019" class="slide level2">
+<h2>Antecedente: segmentación semiautomática (2019)</h2>
+<div class="columns">
+<div class="column" style="width:55%;">
+<p><img data-src="figuras/imagej.png" style="width:100.0%"></p>
+</div><div class="column" style="width:45%;">
+<ul>
+<li>Delimitación y análisis de partículas con <strong>ImageJ</strong>.</li>
+<li>Geometrías y rectángulos delimitadores procesados en <strong>QGIS</strong>.</li>
+<li>Comparación de ejes con mediciones de campo en <strong>R</strong>.</li>
+<li>Problemas identificados: falsos positivos, falsos negativos y sesgos en el eje <strong>b</strong>.</li>
+</ul>
+</div></div>
+</section>
+<section id="lo-que-ya-habíamos-anticipado-en-2019" class="slide level2">
+<h2>Lo que ya habíamos anticipado en 2019</h2>
+<blockquote>
+<p>Mejorar la segmentación mediante técnicas de <em>machine learning</em>.</p>
+</blockquote>
+<ul>
+<li>Separar clastos en contacto.</li>
+<li>Reducir detecciones espurias.</li>
+<li>Mejorar la medición de formas irregulares.</li>
+<li>Incorporar información espacial y, eventualmente, del DSM.</li>
+</ul>
+<p><strong>La nueva evaluación retoma esta línea de trabajo con SegmentEveryGrain.</strong></p>
+</section>
+<section id="segmenteverygrain-herramienta-utilizada" class="slide level2">
+<h2>SegmentEveryGrain: herramienta utilizada</h2>
+<div class="columns">
+<div class="column" style="width:65%;">
+<p><img data-src="figuras/seg_github.jpg" style="width:100.0%" alt="Captura del repositorio de SegmentEveryGrain en GitHub"></p>
+</div><div class="column" style="width:35%;">
+<ul>
+<li><strong>SegmentEveryGrain (SEG)</strong>: segmentación de granos individuales a partir de imágenes.</li>
+<li>Repositorio de código y cuadernos de ejecución públicos.</li>
+<li>Aplicación a teselas del ortomosaico del río Mana.</li>
+<li>Revisión y fusión posterior de fragmentos en QGIS.</li>
+</ul>
+<p><a href="https://github.com/zsylvester/segmenteverygrain">Repositorio de SEG</a></p>
+</div></div>
+</section>
+<section id="segmentación-seg-cuatro-ejemplos-del-ortomosaico" class="slide level2">
+<h2>Segmentación SEG: cuatro ejemplos del ortomosaico</h2>
+<div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.5rem 1rem; align-items: start;">
+<div style="text-align: center;">
+<p><img data-src="figuras/segmentacion_ejemplo_seg_01.jpg" style="width:100.0%" alt="Ejemplo SEG 01"></p>
+<p><small>Ejemplo 01</small></p>
+</div>
+<div style="text-align: center;">
+<p><img data-src="figuras/segmentacion_ejemplo_seg_02.jpg" style="width:100.0%" alt="Ejemplo SEG 02"></p>
+<p><small>Ejemplo 02</small></p>
+</div>
+<div style="text-align: center;">
+<p><img data-src="figuras/segmentacion_ejemplo_seg_03.jpg" style="width:100.0%" alt="Ejemplo SEG 03"></p>
+<p><small>Ejemplo 03</small></p>
+</div>
+<div style="text-align: center;">
+<p><img data-src="figuras/segmentacion_ejemplo_seg_04.jpg" style="width:100.0%" alt="Ejemplo SEG 04"></p>
+<p><small>Ejemplo 04</small></p>
+</div>
+</div>
+<div class="smaller">
+<p>Polígonos de clastos segmentados sobre la imagen; colores para distinguir instancias. Los trazos negros corresponden a la representación de ejes o referencias geométricas.</p>
+</div>
+</section>
+<section id="tubería-aplicada-del-ortomosaico-al-inventario" class="slide level2">
+<h2>Tubería aplicada: del ortomosaico al inventario</h2>
+<ol type="1">
+<li>Ortofoto SfM milimétrica y teselado para ejecutar <strong>SegmentEveryGrain (SEG)</strong>.</li>
+<li>Integración de polígonos SEG en un GeoPackage georreferenciado.</li>
+<li>Identificación manual de fragmentos pertenecientes a un mismo clasto en QGIS.</li>
+<li>Unión geométrica de fragmentos (<code>st_union</code>) y control de geometrías.</li>
+<li>Reestimación homogénea de los ejes <strong>a</strong> y <strong>b</strong> mediante momentos de área.</li>
+<li>Vinculación espacial con puntos de campo y validación de dimensiones.</li>
+</ol>
+<div class="smaller">
+<p>Las dimensiones son ejes completos de <strong>elipses equivalentes</strong> en proyección 2D; no son diámetros de Feret ni ejes tridimensionales observados directamente.</p>
+</div>
+</section>
+<section id="reconstrucción-del-inventario-resultados" class="slide level2">
+<h2>Reconstrucción del inventario: resultados</h2>
+<div class="columns">
+<div class="column" style="width:50%;">
+<h3 id="inventario-seg">Inventario SEG</h3>
+<ul>
+<li><strong>45 660</strong> polígonos útiles iniciales.</li>
+<li><strong>298</strong> grupos manuales identificados.</li>
+<li><strong>44 715</strong> polígonos sin agrupación manual.</li>
+<li><strong>45 013</strong> clastos finales.</li>
+<li><strong>295</strong> entidades finales con más de un fragmento.</li>
+</ul>
+</div><div class="column" style="width:50%;">
+<h3 id="control-y-validación">Control y validación</h3>
+<ul>
+<li><strong>73</strong> clastos emparejados con medidas de campo.</li>
+<li>Recalculo de ejes en todos los clastos.</li>
+<li>Trazabilidad de los polígonos originales.</li>
+<li>Sin exclusión automática por contacto con bordes de tesela.</li>
+</ul>
+</div></div>
+<div class="smaller">
+<p>298 grupos manuales no equivale a 298 entidades multifragmento: tres grupos quedaron con un único polígono.</p>
+</div>
+</section>
+<section id="distribución-granulométrica-superficial" class="slide level2">
+<h2>Distribución granulométrica superficial</h2>
+
+<img data-src="resultados/analisis_gravas_seguro/presentacion/02_histograma_b_log.png" class="quarto-figure quarto-figure-center r-stretch" style="width:84.0%"><div class="smaller">
+<p>Distribución <strong>por número de clastos</strong> del eje menor de la elipse equivalente, no distribución por masa de tamizado.</p>
+</div>
+</section>
+<section id="distribución-acumulada-de-tamaños" class="slide level2">
+<h2>Distribución acumulada de tamaños</h2>
+
+<img data-src="resultados/analisis_gravas_seguro/presentacion/03_curva_acumulada.png" class="quarto-figure quarto-figure-center r-stretch" style="width:85.0%"></section>
+<section id="tamaños-y-forma-de-los-clastos" class="slide level2">
+<h2>Tamaños y forma de los clastos</h2>
+<div class="columns">
+<div class="column" style="width:50%;">
+<ul>
+<li>Mediana del eje mayor <strong>a: 52,41 mm</strong>.</li>
+<li>Mediana del eje menor <strong>b: 32,73 mm</strong>.</li>
+<li>Media de <strong>a: 74,56 mm</strong>.</li>
+<li>Media de <strong>b: 46,60 mm</strong>.</li>
+<li>Percentil 95 de <strong>a: 198,63 mm</strong>.</li>
+<li>Percentil 95 de <strong>b: 122,25 mm</strong>.</li>
+<li>Mediana de <strong>b/a: 0,666</strong>.</li>
+</ul>
+</div><div class="column" style="width:50%;">
+<p><img data-src="resultados/analisis_gravas_seguro/presentacion/05_relacion_ejes.png" style="width:100.0%"></p>
+</div></div>
+</section>
+<section id="relación-entre-tamaño-y-elongación" class="slide level2">
+<h2>Relación entre tamaño y elongación</h2>
+
+<img data-src="resultados/analisis_gravas_seguro/presentacion/06_tamano_elongacion.png" class="quarto-figure quarto-figure-center r-stretch" style="width:86.0%"></section>
+<section id="heterogeneidad-espacial-tamaño-mediano" class="slide level2">
+<h2>Heterogeneidad espacial: tamaño mediano</h2>
+
+<img data-src="resultados/analisis_gravas_seguro/presentacion/07_mapa_D50.png" class="quarto-figure quarto-figure-center r-stretch" style="width:85.0%"><div class="smaller">
+<p>Resumen espacial por celdas; el D50 representa la mediana del eje menor por número de clastos dentro de cada celda.</p>
+</div>
+</section>
+<section id="validación-de-campo-73-pares-de-clastos" class="slide level2">
+<h2>Validación de campo: 73 pares de clastos</h2>
+<table class="caption-top">
+<thead>
+<tr class="header">
+<th>Indicador</th>
+<th style="text-align: right;">Eje mayor (a)</th>
+<th style="text-align: right;">Eje menor (b)</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Correlación de Pearson (r)</td>
+<td style="text-align: right;">0,996</td>
+<td style="text-align: right;">0,989</td>
+</tr>
+<tr class="even">
+<td>R² aproximado</td>
+<td style="text-align: right;">0,992</td>
+<td style="text-align: right;">0,978</td>
+</tr>
+<tr class="odd">
+<td>Sesgo SEG − campo</td>
+<td style="text-align: right;">+10,30 mm</td>
+<td style="text-align: right;">−1,62 mm</td>
+</tr>
+<tr class="even">
+<td>Error absoluto medio (MAE)</td>
+<td style="text-align: right;">16,20 mm</td>
+<td style="text-align: right;">13,10 mm</td>
+</tr>
+<tr class="odd">
+<td>Raíz del error cuadrático medio (RMSE)</td>
+<td style="text-align: right;">23,10 mm</td>
+<td style="text-align: right;">28,20 mm</td>
+</tr>
+<tr class="even">
+<td>Error porcentual absoluto medio (MAPE)</td>
+<td style="text-align: right;">6,07 %</td>
+<td style="text-align: right;">5,83 %</td>
+</tr>
+</tbody>
+</table>
+<div class="smaller">
+<p>Los valores son los resultados redondeados del análisis ejecutado. La correlación mide asociación, <strong>no</strong> por sí sola concordancia.</p>
+</div>
+</section>
+<section id="asociación-entre-campo-y-seg" class="slide level2">
+<h2>Asociación entre campo y SEG</h2>
+
+<img data-src="resultados/analisis_gravas_seguro/presentacion/12_correlacion_campo_SEG.png" class="quarto-figure quarto-figure-center r-stretch" style="width:94.0%"><div class="smaller">
+<p>Se muestran r, R², regresión OLS y referencia 1:1 por eje. Las estadísticas se calculan a partir de los pares de campo.</p>
+</div>
+</section>
+<section id="concordancia-diferencias-blandaltman" class="slide level2">
+<h2>Concordancia: diferencias Bland–Altman</h2>
+
+<img data-src="resultados/analisis_gravas_seguro/presentacion/13_bland_altman.png" class="quarto-figure quarto-figure-center r-stretch" style="width:87.0%"><div class="smaller">
+<p>La línea central indica el sesgo medio; las discontinuas, sesgo ±1,96 desviaciones estándar.</p>
+</div>
+</section>
+<section id="distribución-de-errores-porcentuales" class="slide level2">
+<h2>Distribución de errores porcentuales</h2>
+
+<img data-src="resultados/analisis_gravas_seguro/presentacion/14_error_porcentual.png" class="quarto-figure quarto-figure-center r-stretch" style="width:86.0%"><div class="smaller">
+<p>Violines, observaciones individuales y medias etiquetadas; error firmado = 100 × (SEG − campo) / campo.</p>
+</div>
+</section>
+<section id="interpretación-y-limitaciones" class="slide level2">
+<h2>Interpretación y limitaciones</h2>
+<ul>
+<li>Las correlaciones son muy altas (<strong>r = 0,996</strong> y <strong>0,989</strong>), pero el eje mayor muestra una <strong>sobreestimación media</strong>.</li>
+<li>El MAPE próximo al 6 % es alentador para estos <strong>73 clastos emparejados</strong>, sin demostrar por sí solo exactitud para todo el inventario.</li>
+<li>Los ejes de elipse equivalente se obtienen de la silueta 2D y no son idénticos a las medidas físicas de campo.</li>
+<li>La segmentación sigue siendo sensible a sombras, oclusión, contacto entre clastos y delimitaciones ambiguas.</li>
+<li>Los resultados de tamaño corresponden a <strong>frecuencias de clastos visibles</strong>, no a una granulometría por masa.</li>
+</ul>
+</section>
+<section id="de-2019-a-2026-qué-hemos-conseguido" class="slide level2">
+<h2>De 2019 a 2026: ¿qué hemos conseguido?</h2>
 <table class="caption-top">
 <colgroup>
-<col style="width: 30%">
-<col style="width: 30%">
-<col style="width: 40%">
+<col style="width: 33%">
+<col style="width: 33%">
+<col style="width: 33%">
 </colgroup>
 <thead>
 <tr class="header">
-<th>Fuente</th>
-<th>Predictores</th>
-<th style="text-align: right;">Número</th>
+<th>Dimensión</th>
+<th>2019: ImageJ+QGIS</th>
+<th>2026: SEG</th>
 </tr>
 </thead>
 <tbody>
 <tr class="odd">
-<td>Sentinel-2 SR</td>
-<td>B2, B3, B4, B8, B11, B12; NDVI, NDWI, MNDWI, BSI (índice de suelo desnudo), brillo (reflectancia media del visible), BR (reflectancia media visible)</td>
-<td style="text-align: right;">12</td>
+<td>Detección</td>
+<td>11 630 rectángulos</td>
+<td>45 013 clastos finales</td>
 </tr>
 <tr class="even">
-<td>Dynamic World</td>
-<td>agua, árboles, herbáceas, construido, desnudo</td>
-<td style="text-align: right;">5</td>
+<td>Geometría</td>
+<td>Rectángulos delimitadores</td>
+<td>Polígonos individuales</td>
 </tr>
 <tr class="odd">
-<td>Sentinel-1 GRD</td>
-<td>VV, VH, VV−VH</td>
-<td style="text-align: right;">3</td>
+<td>Medición</td>
+<td>Dimensiones de rectángulos</td>
+<td>Ejes de elipse equivalente</td>
 </tr>
 <tr class="even">
-<td>NASADEM</td>
-<td>elevación, pendiente</td>
-<td style="text-align: right;">2</td>
+<td>Validación</td>
+<td>Comparaciones y pruebas <em>t</em></td>
+<td>73 pares; r, MAE, RMSE, MAPE</td>
 </tr>
 <tr class="odd">
-<td><strong>Total</strong></td>
-<td></td>
-<td style="text-align: right;"><strong>22</strong></td>
+<td>Concordancia</td>
+<td>No evaluada con Bland–Altman</td>
+<td>Sesgo y límites de concordancia</td>
 </tr>
-</tbody>
-</table>
-<p>Período de composición: <strong>15 enero–15 marzo de 2025</strong>. Resolución de exportación: <strong>10 m</strong>.</p>
-</section>
-<section id="arquitectura-y-entrenamiento" class="slide level2">
-<h2>Arquitectura y entrenamiento</h2>
-<ul>
-<li>Modelo de segmentación semántica <strong>U-Net</strong> con cinco clases: urbano/artificial, playa arenosa, agua, vegetación, roca/acantilado.</li>
-<li>Parches de entrada <strong>160 × 160</strong> píxeles, con núcleo de inferencia <strong>128 × 128</strong>.</li>
-<li>Normalización a partir de las estadísticas del entrenamiento.</li>
-<li>Entrenamiento con etiquetas espaciales parciales y pérdida enmascarada.</li>
-<li>Modelo guardado en formato <code>.keras</code> y aplicado posteriormente en Colab.</li>
-</ul>
-</section>
-<section id="del-entrenamiento-a-la-cartografía-nacional" class="slide level2">
-<h2>Del entrenamiento a la cartografía nacional</h2>
-<div class="columns">
-<div class="column" style="width:48%;">
-<p><strong>Google Earth Engine</strong></p>
-<ol type="1">
-<li>Composición de predictores.</li>
-<li>Máscaras de datos válidos y del sector.</li>
-<li>Exportación GeoTIFF georreferenciada.</li>
-</ol>
-</div><div class="column" style="width:52%;">
-<p><strong>Google Colab</strong></p>
-<ol type="1">
-<li>Lectura por ventanas de los GeoTIFF.</li>
-<li>Normalización y predicción U-Net.</li>
-<li>Recorte al núcleo central.</li>
-<li>Exportación de clases, probabilidades y estadísticas.</li>
-</ol>
-</div></div>
-</section>
-<section id="evaluación-la-clase-de-interés-importa" class="slide level2">
-<h2>Evaluación: la clase de interés importa</h2>
-
-<img data-src="figuras/f1_clases.png" class="quarto-figure quarto-figure-center r-stretch"><p><strong>F1 de playa arenosa: 0,786</strong> · Precisión: <strong>0,740</strong> · Exhaustividad: <strong>0,838</strong>.</p>
-<div class="smaller">
-<p>Evaluación V5 del conjunto de validación del entrenamiento; <strong>no</strong> es una validación independiente nacional de los siete sectores.</p>
-</div>
-</section>
-<section id="matriz-de-confusión-de-validación-v5" class="slide level2 slide-matriz">
-<h2>Matriz de confusión de validación V5</h2>
-
-<img data-src="figuras/matriz_confusion_v5.png" class="quarto-figure quarto-figure-center r-stretch"><div class="leyenda-matriz">
-<p><strong>Clases</strong></p>
-<p>1 · Urbano/artificial<br>
-2 · Playa arenosa<br>
-3 · Agua<br>
-4 · Vegetación<br>
-5 · Roca/acantilado</p>
-<hr>
-<p><strong>Cómo leerla</strong></p>
-<p><strong>Filas:</strong> realidad<br>
-<strong>Columnas:</strong> predicción<br>
-<strong>Diagonal:</strong> aciertos<br>
-<strong>Fuera:</strong> confusiones</p>
-<p><strong>Principal error:</strong><br>
-Playa ↔︎ roca</p>
-</div>
-<div class="smaller">
-<p>F1 macro ≈ <strong>0,955</strong>; el desequilibrio de clases exige comunicar por separado el rendimiento sobre playa arenosa.</p>
-</div>
-</section>
-<section id="cartografía-de-clasificación-siete-sectores" class="slide level2">
-<h2>Cartografía de clasificación: siete sectores</h2>
-
-<img data-src="figuras/mosaico_clasificacion_nacional.png" class="quarto-figure quarto-figure-center r-stretch"><div class="smaller">
-<p>Mosaico de visualización a resolución reducida a partir de los siete GeoTIFF de clases; en los solapes se utiliza la primera clasificación disponible.</p>
-</div>
-</section>
-<section id="cartografía-de-clasificación-siete-sectores-1" class="slide level2">
-<h2>Cartografía de clasificación: siete sectores</h2>
-<div class="columns">
-<div class="column" style="width:50%;">
-<p><strong>Clasificación nacional</strong></p>
-<div class="quarto-figure quarto-figure-center">
-<figure>
-<p><img data-src="figuras/mosaico_clasificacion_nacional.png" class="quarto-figure quarto-figure-center" style="width:100.0%"></p>
-</figure>
-</div>
-</div><div class="column" style="width:50%;">
-<p><strong>Distribución de los siete sectores</strong></p>
-<div class="quarto-figure quarto-figure-center">
-<figure>
-<p><img data-src="figuras/preparacion_qgis.jpg" class="quarto-figure quarto-figure-center" style="width:100.0%"></p>
-</figure>
-</div>
-</div></div>
-<div class="smaller">
-<p>Izquierda: mosaico nacional de visualización a resolución reducida, generado a partir de los siete GeoTIFF de clasificación. Derecha: distribución espacial de los siete sectores de inferencia. En los solapes del mosaico se utiliza la primera clasificación disponible.</p>
-</div>
-</section>
-<section id="superficies-clasificadas-por-sector" class="slide level2">
-<h2>Superficies clasificadas por sector</h2>
-
-<img data-src="figuras/superficies_sectores.png" class="quarto-figure quarto-figure-center r-stretch"><div class="smaller">
-<p>Las superficies proceden de los CSV de inferencia. <strong>No sumar como superficie nacional única sin resolver previamente los solapes entre sectores.</strong></p>
-</div>
-</section>
-<section id="cuánta-superficie-se-clasifica-como-playa" class="slide level2">
-<h2>¿Cuánta superficie se clasifica como playa?</h2>
-
-<img data-src="figuras/playa_por_sector.png" class="quarto-figure quarto-figure-center r-stretch"><div class="smaller">
-<p>La suma simple de las siete estimaciones es <strong>196,17 km²</strong>, con posibles dobles conteos por solapes. Es superficie de píxeles etiquetados «playa», no longitud de costa ni inventario validado de playas.</p>
-</div>
-<style>
-.reveal table.tabla-playas {font-size: 0.63em; width: 100%;}
-.reveal table.tabla-playas th, .reveal table.tabla-playas td {
-  padding: 0.20em 0.35em;
-}
-</style>
-</section>
-<section id="longitud-costera-por-clase-u-net-intersección-con-s2coast" class="slide level2">
-<h2>Longitud costera por clase U-Net (intersección con S2Coast)</h2>
-
-<img data-src="figuras/longitud_por_clase.png" class="quarto-figure quarto-figure-center r-stretch" style="width:88.0%"><div class="smaller">
-<p>Longitudes estimadas por muestreo regular de la línea S2Coast sobre el mosaico de clasificación. <strong>Playa arenosa: 630,24 km</strong> (34,92 % de los 1.804,74 km de costa analizados; 35,24 % de la longitud con clasificación válida).</p>
-</div>
-</section>
-<section id="tabla-de-longitud-costera-por-clase-intersección-con-s2coast" class="slide level2">
-<h2>Tabla de longitud costera por clase (intersección con S2Coast)</h2>
-<table class="tabla-playas">
-<thead>
-<tr>
-<th style="text-align:left;">
-Clase
-</th>
-<th style="text-align:right;">
-Longitud (km)
-</th>
-<th style="text-align:right;">
-% costa total
-</th>
-<th style="text-align:right;">
-% costa con datos
-</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td style="text-align:left;">
-Urbano/artificial
-</td>
-<td style="text-align:right;">
-76.49
-</td>
-<td style="text-align:right;">
-4.24
-</td>
-<td style="text-align:right;">
-4.28
-</td>
-</tr>
-<tr>
-<td style="text-align:left;">
-Playa arenosa
-</td>
-<td style="text-align:right;">
-630.24
-</td>
-<td style="text-align:right;">
-34.92
-</td>
-<td style="text-align:right;">
-35.24
-</td>
-</tr>
-<tr>
-<td style="text-align:left;">
-Agua
-</td>
-<td style="text-align:right;">
-136.12
-</td>
-<td style="text-align:right;">
-7.54
-</td>
-<td style="text-align:right;">
-7.61
-</td>
-</tr>
-<tr>
-<td style="text-align:left;">
-Vegetación
-</td>
-<td style="text-align:right;">
-397.86
-</td>
-<td style="text-align:right;">
-22.05
-</td>
-<td style="text-align:right;">
-22.25
-</td>
-</tr>
-<tr>
-<td style="text-align:left;">
-Roca/acantilado
-</td>
-<td style="text-align:right;">
-547.59
-</td>
-<td style="text-align:right;">
-30.34
-</td>
-<td style="text-align:right;">
-30.62
-</td>
+<tr class="even">
+<td>Análisis espacial</td>
+<td>Geoprocesamiento en SIG</td>
+<td>Distribuciones y mapas de D50</td>
 </tr>
 </tbody>
 </table>
 <div class="smaller">
-<p>La suma de las clases representa la costa con clasificación válida, no necesariamente la longitud total de S2Coast.</p>
+<p>Las cantidades de objetos no son directamente comparables: se utilizaron diferentes criterios de segmentación y geometría.</p>
 </div>
-</section>
-<section id="longitud-y-proporción-de-playa-según-el-método-intersección-con-s2coast" class="slide level2">
-<h2>Longitud y proporción de playa según el método (intersección con S2Coast)</h2>
-<table class="tabla-playas">
-<thead>
-<tr>
-<th style="text-align:left;">
-Método
-</th>
-<th style="text-align:right;">
-Longitud (km)
-</th>
-<th style="text-align:right;">
-% costa total
-</th>
-<th style="text-align:right;">
-% costa con datos
-</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td style="text-align:left;">
-U-Net: clase 2 (playa)
-</td>
-<td style="text-align:right;">
-630.24
-</td>
-<td style="text-align:right;">
-34.92
-</td>
-<td style="text-align:right;">
-35.24
-</td>
-</tr>
-<tr>
-<td style="text-align:left;">
-Probabilidad &gt;= 0.10
-</td>
-<td style="text-align:right;">
-1060.70
-</td>
-<td style="text-align:right;">
-58.77
-</td>
-<td style="text-align:right;">
-59.31
-</td>
-</tr>
-<tr>
-<td style="text-align:left;">
-Probabilidad &gt;= 0.20
-</td>
-<td style="text-align:right;">
-834.45
-</td>
-<td style="text-align:right;">
-46.24
-</td>
-<td style="text-align:right;">
-46.66
-</td>
-</tr>
-<tr>
-<td style="text-align:left;">
-Probabilidad &gt;= 0.30
-</td>
-<td style="text-align:right;">
-696.86
-</td>
-<td style="text-align:right;">
-38.61
-</td>
-<td style="text-align:right;">
-38.97
-</td>
-</tr>
-<tr>
-<td style="text-align:left;">
-Probabilidad &gt;= 0.40
-</td>
-<td style="text-align:right;">
-595.00
-</td>
-<td style="text-align:right;">
-32.97
-</td>
-<td style="text-align:right;">
-33.27
-</td>
-</tr>
-<tr>
-<td style="text-align:left;">
-Probabilidad &gt;= 0.50
-</td>
-<td style="text-align:right;">
-514.38
-</td>
-<td style="text-align:right;">
-28.50
-</td>
-<td style="text-align:right;">
-28.76
-</td>
-</tr>
-<tr>
-<td style="text-align:left;">
-Probabilidad &gt;= 0.60
-</td>
-<td style="text-align:right;">
-440.50
-</td>
-<td style="text-align:right;">
-24.41
-</td>
-<td style="text-align:right;">
-24.63
-</td>
-</tr>
-<tr>
-<td style="text-align:left;">
-Probabilidad &gt;= 0.70
-</td>
-<td style="text-align:right;">
-367.16
-</td>
-<td style="text-align:right;">
-20.34
-</td>
-<td style="text-align:right;">
-20.53
-</td>
-</tr>
-<tr>
-<td style="text-align:left;">
-Probabilidad &gt;= 0.80
-</td>
-<td style="text-align:right;">
-283.47
-</td>
-<td style="text-align:right;">
-15.71
-</td>
-<td style="text-align:right;">
-15.85
-</td>
-</tr>
-<tr>
-<td style="text-align:left;">
-Probabilidad &gt;= 0.90
-</td>
-<td style="text-align:right;">
-174.34
-</td>
-<td style="text-align:right;">
-9.66
-</td>
-<td style="text-align:right;">
-9.75
-</td>
-</tr>
-</tbody>
-</table>
-<div class="smaller">
-<p>La clasificación multiclase (<code>argmax</code>) y los umbrales de probabilidad responden a reglas de decisión diferentes. Los porcentajes sobre la costa total incluyen los tramos sin predicción en el denominador.</p>
-</div>
-</section>
-<section id="sensibilidad-de-la-longitud-de-playa-al-umbral-intersección-con-s2coast" class="slide level2">
-<h2>Sensibilidad de la longitud de playa al umbral (intersección con S2Coast)</h2>
-
-<img data-src="figuras/longitud_segun_umbral.png" class="quarto-figure quarto-figure-center r-stretch" style="width:88.0%"><div class="smaller">
-<p>La longitud disminuye de <strong>1.060,70 km</strong> (probabilidad ≥ 0,1) a <strong>174,34 km</strong> (≥ 0,9). Para probabilidad ≥ 0,5 se obtienen <strong>514,38 km</strong>, frente a <strong>630,24 km</strong> de la clasificación U-Net.</p>
-</div>
-</section>
-<section id="comparación-de-longitudes-costeras" class="slide level2">
-<h2>Comparación de longitudes costeras</h2>
-<div class="columns">
-<div class="column" style="width:50%;">
-<p><strong>Clasificación multiclase</strong></p>
-<ul>
-<li>Playa arenosa: <strong>630,24 km</strong>.</li>
-<li><strong>34,92 %</strong> de toda la línea S2Coast.</li>
-<li><strong>35,24 %</strong> de la costa con clasificación válida.</li>
-</ul>
-</div><div class="column" style="width:50%;">
-<p><strong>Probabilidad de playa ≥ 0,5</strong></p>
-<ul>
-<li>Playa probable: <strong>514,38 km</strong>.</li>
-<li><strong>28,50 %</strong> de toda la línea S2Coast.</li>
-<li><strong>28,76 %</strong> de la costa con probabilidad válida.</li>
-</ul>
-</div></div>
-<div class="smaller">
-<p>La línea de referencia tiene <strong>1.804,74 km</strong>, de los cuales <strong>1.788,30 km</strong> cuentan con inferencia válida. Son estimaciones sobre S2Coast, no una delimitación independiente de playas verificada en campo. La sensibilidad al umbral debe interpretarse como un análisis de escenarios, no como validación de precisión.</p>
-</div>
-</section>
-<section id="ejemplo-sector-1" class="slide level2">
-<h2>Ejemplo: sector 1</h2>
-
-<img data-src="figuras/sector_01_mapas.png" class="quarto-figure quarto-figure-center r-stretch"></section>
-<section id="ejemplo-sector-4" class="slide level2">
-<h2>Ejemplo: sector 4</h2>
-
-<img data-src="figuras/sector_04_mapas.png" class="quarto-figure quarto-figure-center r-stretch"></section>
-<section id="ejemplo-sector-6" class="slide level2">
-<h2>Ejemplo: sector 6</h2>
-
-<img data-src="figuras/sector_06_mapas.png" class="quarto-figure quarto-figure-center r-stretch"></section>
-<section id="ejemplo-sector-7" class="slide level2">
-<h2>Ejemplo: sector 7</h2>
-
-<img data-src="figuras/sector_07_mapas.png" class="quarto-figure quarto-figure-center r-stretch"></section>
-<section id="distribución-de-probabilidades-y-confianza" class="slide level2">
-<h2>Distribución de probabilidades y confianza</h2>
-
-<img data-src="figuras/sector_01_histogramas.png" style="width:88.0%" class="r-stretch"><div class="smaller">
-<p>Histogramas del sector 1, donde predominan las probabilidades bajas de playa y las confianzas altas en la clase predicha; sin embargo, una confianza elevada no garantiza una clasificación correcta..</p>
-</div>
-</section>
-<section id="mapa-gee" class="slide level2">
-<h2>Mapa interactivo · aplicación pública de GEE</h2>
-<iframe id="gee-app" title="Aplicación GEE de clasificación costera" src="about:blank" style="width:100%;height:650px;border:1px solid #b8cbd5;border-radius:10px;background:#f2f6f9" loading="lazy">
-</iframe>
-<script>
-(function(){
- const url='https://ee-geofis.projects.earthengine.app/view/lc-rd'; // Reemplazar por la URL pública de la app una vez desplegada
- const f=document.getElementById('gee-app');
- if(url){f.src=url;}else{f.srcdoc='<div style="font:20px system-ui;text-align:center;padding:100px 30px;color:#29465a"><b>Aplicación pública GEE</b><p>El código funcional de la aplicación está incluido en el directorio linea-de-costa-rd.</p></div>';}
-})();
-</script>
-</section>
-<section id="alternativa-por-si-nos-quedamos-sin-internet" class="slide level2">
-<h2>Alternativa, por si nos quedamos sin internet</h2>
-
-<img data-src="figuras/alternativa_gee_interactiva.jpg" class="quarto-figure quarto-figure-center r-stretch"></section>
-<section id="de-la-clasificación-a-coastsat" class="slide level2">
-<h2>De la clasificación a CoastSat</h2>
-<ul>
-<li><p><strong>U-Net</strong> → selección de tramos arenosos candidatos</p></li>
-<li><p><strong>CoastSat</strong> → extracción de posiciones multitemporales de la línea de costa</p></li>
-<li><p><strong>Transectos</strong> → desplazamientos, tendencias y heterogeneidad espacial</p></li>
-<li><p><strong>Diagnóstico</strong> → erosión, acreción, estabilidad y priorización del seguimiento</p></li>
-</ul>
-</section>
-<section id="trudillé-ejemplo-de-aplicación-coastsat" class="slide level2">
-<h2>Trudillé: ejemplo de aplicación CoastSat</h2>
-<p>(Apoyo a Gladys Rosado y su equipo, CIBIMA)</p>
-<p>Casi 700 escenas disponibles desde 1985, ~400 aprovechables.</p>
-<div class="center">
-<div class="quarto-figure quarto-figure-center">
-<figure>
-<p><img data-src="figuras/mapa_control_transectos.png" class="quarto-figure quarto-figure-center"></p>
-</figure>
-</div>
-</div>
-</section>
-<section id="section" class="slide level2">
-<h2></h2>
-
-<img data-src="figuras/cobertura_temporal.png" class="quarto-figure quarto-figure-center r-stretch"></section>
-<section id="section-1" class="slide level2">
-<h2></h2>
-
-<img data-src="figuras/mapa_clases_LRR.png" class="quarto-figure quarto-figure-center r-stretch"><div class="smaller">
-<p>Ejemplo procedente del análisis previo de Trudillé. Ilustra la etapa de diagnóstico posterior a la selección de playas, no una validación del clasificador U-Net.</p>
-</div>
-</section>
-<section id="trudillé-evolución-temporal" class="slide level2">
-<h2>Trudillé: evolución temporal</h2>
-
-<img data-src="figuras/evolucion_global.png" style="width:92.0%" class="r-stretch"></section>
-<section id="trudillé-tendencias-y-modelos" class="slide level2">
-<h2>Trudillé: tendencias y modelos</h2>
-
-<img data-src="figuras/concordancia_mixto_LRR.png" class="quarto-figure quarto-figure-center r-stretch"></section>
-<section id="trudillé-tendencias-y-modelos-1" class="slide level2">
-<h2>Trudillé: tendencias y modelos</h2>
-
-<img data-src="figuras/mapa_tasas_mixtas.png" class="quarto-figure quarto-figure-center r-stretch"></section>
-<section id="limitaciones-y-controles-necesarios" class="slide level2">
-<h2>Limitaciones y controles necesarios</h2>
-<ul>
-<li>Validación V5 limitada para playa arenosa (<strong>468 píxeles</strong> en el conjunto de validación reportado).</li>
-<li>Posibles errores de confusión entre superficies claras, arena y ambientes artificiales.</li>
-<li>Solapes de sectores: consolidar sin doble conteo antes de publicar superficies nacionales.</li>
-<li>Evaluación espacial independiente y revisión experta de tramos seleccionados.</li>
-<li>En CoastSat: resolución, nubosidad, oleaje, mareas y calidad de transectos.</li>
-</ul>
-</section>
-<section id="perspectivas" class="slide level2">
-<h2>Perspectivas</h2>
-<ol type="1">
-<li>Refinar etiquetas y ampliar muestras de playas y costas difíciles.</li>
-<li>Construir una validación espacial independiente y por tipologías de costa.</li>
-<li>Convertir píxeles de playa en <strong>tramos costeros candidatos</strong>, con continuidad y longitud.</li>
-<li>Publicar mapas interactivos y productos abiertos reproducibles.</li>
-<li>Aplicar CoastSat y el cuaderno de análisis de Trudillé a playas seleccionadas de todo el país.</li>
-</ol>
+<p><strong>Avance principal:</strong> de una aproximación semiautomática a un inventario de clastos individualizados, georreferenciados, trazables y sometidos a una evaluación de concordancia.</p>
 </section>
 <section id="conclusiones" class="slide level2">
 <h2>Conclusiones</h2>
 <ul>
-<li>Se implementó un flujo operativo <strong>GEE → U-Net/Colab → cartografía sectorial</strong>.</li>
-<li>La inferencia cubre <strong>siete sectores</strong> del corredor litoral dominicano.</li>
-<li>El desempeño de playa es prometedor, pero requiere validación adicional antes de afirmaciones nacionales definitivas.</li>
-<li>El resultado aporta una <strong>base para seleccionar tramos de seguimiento con CoastSat</strong>.</li>
+<li>La combinación <strong>SfM + SegmentEveryGrain + revisión manual</strong> permitió reconstruir <strong>45 013 clastos</strong> en un banco fluvial.</li>
+<li>Se obtuvo un inventario georreferenciado y trazable con dimensiones proyectadas calculadas de forma uniforme.</li>
+<li>La validación con <strong>73 clastos</strong> evidenció asociación lineal muy elevada entre campo y SEG, con errores porcentuales absolutos medios cercanos al <strong>6 %</strong>.</li>
+<li>La metodología ofrece una vía para caracterizar la <strong>granulometría superficial por conteo</strong>, con la precaución de examinar sesgos y representatividad.</li>
+<li>Respecto al trabajo de 2019, <strong>se materializó la propuesta de incorporar aprendizaje automático</strong>, obteniendo geometrías individuales y una evaluación más completa de los errores de medición.</li>
 </ul>
-<p><strong>Gracias.</strong></p>
+</section>
+<section id="referencias-y-recursos" class="slide level2">
+<h2>Referencias y recursos</h2>
+<ul>
+<li>Sylvester, Z. <a href="https://github.com/zsylvester/segmenteverygrain">SegmentEveryGrain: repositorio y cuadernos</a>.</li>
+<li><a href="https://github.com/zsylvester/segmenteverygrain/blob/main/notebooks/Segment_every_grain_colab.ipynb">Cuaderno original para Google Colab</a>.</li>
+<li>Martínez Batlle, J. R. (2019). <em>Estimación de la granulometría de carga gruesa superficial mediante fotografías de alta resolución tomadas por UAV</em>. XVIII Jornada de Investigación Científica, UASD.</li>
+<li>Bunte (2001): completar referencia bibliográfica de la presentación original.</li>
+</ul>
 <div class="quarto-auto-generated-content">
 <div class="footer footer-default">
-<p>UASD · Detección de playas arenosas · 2026</p>
+<p>UASD · Granulometría superficial de gravas · 2026</p>
 </div>
 </div>
 </section>
@@ -1206,44 +980,6 @@ Probabilidad &gt;= 0.90
         ]
       });
     </script>
-    
-    <script>
-      // htmlwidgets need to know to resize themselves when slides are shown/hidden.
-      // Fire the "slideenter" event (handled by htmlwidgets.js) when the current
-      // slide changes (different for each slide format).
-      (function () {
-        // dispatch for htmlwidgets
-        function fireSlideEnter() {
-          const event = window.document.createEvent("Event");
-          event.initEvent("slideenter", true, true);
-          window.document.dispatchEvent(event);
-        }
-
-        function fireSlideChanged(previousSlide, currentSlide) {
-          fireSlideEnter();
-
-          // dispatch for shiny
-          if (window.jQuery) {
-            if (previousSlide) {
-              window.jQuery(previousSlide).trigger("hidden");
-            }
-            if (currentSlide) {
-              window.jQuery(currentSlide).trigger("shown");
-            }
-          }
-        }
-
-        // hookup for slidy
-        if (window.w3c_slidy) {
-          window.w3c_slidy.add_observer(function (slide_num) {
-            // slide_num starts at position 1
-            fireSlideChanged(null, w3c_slidy.slides[slide_num - 1]);
-          });
-        }
-
-      })();
-    </script>
-
     <script id="quarto-html-after-body" type="application/javascript">
     window.document.addEventListener("DOMContentLoaded", function (event) {
       const toggleBodyColorMode = (bsSheetEl) => {
