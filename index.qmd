@@ -359,9 +359,26 @@ Las cantidades de objetos no son directamente comparables:
 se utilizaron diferentes criterios de segmentación y geometría.
 :::
 
-**Avance principal:** de una aproximación semiautomática
-a un inventario de clastos individualizados, georreferenciados,
-trazables y sometidos a una evaluación de concordancia.
+**Avance principal:** de una aproximación semiautomática a un inventario de clastos individualizados, georreferenciados, trazables y sometidos a una evaluación de concordancia.
+
+## De 2019 a 2026: ¿qué hemos conseguido?
+
+::: {.columns}
+::: {.column width="50%"}
+![](figuras/qgis_gif_2019.gif){width="95%"}
+
+#### Segmentación de 2019
+#### (ImageJ + QGIS)
+
+:::
+::: {.column width="50%"}
+![](figuras/qgis_gif_2026.gif){width="95%"}
+
+#### Segmentación de 2026
+#### (SEG)
+
+:::
+:::
 
 
 
